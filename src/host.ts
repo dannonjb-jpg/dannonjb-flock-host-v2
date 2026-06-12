@@ -94,6 +94,9 @@ export class Host {
     const mediaRef = replay ? (ev?.payload as any)?.wa_media_ref : msg.media?.ref;
     const mediaMime = replay ? (ev?.payload as any)?.media_mime : msg.media?.mime;
 
+    let inboundImageBytes: Buffer | undefined;
+    let inboundImageMime: string | undefined;
+
     if (mediaRef !== undefined) {
       try {
         const bytes = await this.d.channel.downloadMedia(mediaRef); // retry is inside
@@ -103,6 +106,8 @@ export class Host {
           source_message: inboundEventId,
           mime: mediaMime,
         });
+        inboundImageBytes = bytes;
+        inboundImageMime = mediaMime;
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         this.d.logger?.error({ err, inboundEventId }, "media ingest failed");
@@ -154,16 +159,9 @@ export class Host {
     await this.d.sleep(this.d.cadence.readDelayMs(msg.text));
     await this.d.channel.readMessages(msg.jid);
 
-    // 5a. Image-input stopgap: if text is empty (media-only message), forward to brain with synthetic text.
-    // Prevents 400 errors on media-only inputs while letting the brain handle naturally.
+    // 5a. Ensure non-empty text for media-only messages (API requires non-empty user content).
     if (!msg.text || msg.text.trim() === "") {
-      console.log(`[host:stopgap] order ${order.order_id}: empty-text message (media-only), forwarding to brain with synthetic text`);
-      // Generic placeholder for media-only messages
-      // Brain will interpret based on context (intake = likely logo, awaiting_decision = likely reference or feedback)
-      msg.text = order.state === "intake" 
-        ? "[client sent an image — likely a logo or reference image]"
-        : "[client sent an image as feedback or reference]";
-      // Continue to brain call below (no early return)
+      msg.text = inboundImageBytes ? "[image]" : "[media]";
     }
 
     // 6. Brain-attempt marker: log entry before calling brain (durable record)
@@ -191,6 +189,8 @@ export class Host {
         contextHeader: header,
         history,
         systemPrompt: this.d.systemPrompt,
+        imageBytes: inboundImageBytes,
+        imageMime: inboundImageMime,
       });
       const brainMs = Date.now() - brainStart;
       const isSilent = raw.toLowerCase().includes("[silent]");

@@ -9,6 +9,7 @@
 //
 // HttpHermesClient is kept for custom / proxy deployments (just set HERMES_API_URL).
 
+import sharp from "sharp";
 import { Order, JobSpec } from "../domain/types.js";
 import { Store } from "../store/store.js";
 import { AssetStore, coarseUsable } from "../store/asset-store.js";
@@ -25,6 +26,8 @@ export interface BrainRequest {
   contextHeader: string;  // the [ctx] line, prepended to the user message each turn
   history: ConversationTurn[];  // recent turns, oldest-first, trimmed by the host
   systemPrompt: string;   // SOUL contract text, loaded at boot
+  imageBytes?: Buffer;    // raw bytes of the current inbound image, if any
+  imageMime?: string;     // MIME type hint from the channel (may be undefined)
 }
 
 export interface Brain {
@@ -32,7 +35,70 @@ export interface Brain {
   ask(req: BrainRequest): Promise<string>;
 }
 
+// ── Vision helpers ────────────────────────────────────────────────────────────
+
+const VISION_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+/**
+ * Prepare image bytes for the Anthropic vision API.
+ * SVG and PDF are rasterized to PNG via Sharp (max 1568px — Anthropic's recommended cap).
+ * Unsupported raster formats are re-encoded to PNG via Sharp.
+ * Returns base64 data + media_type string ready for the API content block.
+ */
+async function prepareImageForVision(bytes: Buffer, mime?: string): Promise<{ data: string; mediaType: string }> {
+  const isSvg = mime === "image/svg+xml" || isSvgBytes(bytes);
+  const isPdf = mime === "application/pdf" || isPdfBytes(bytes);
+  const needsRasterize = isSvg || isPdf || (mime !== undefined && !VISION_MIME.has(mime));
+
+  if (needsRasterize || (mime === undefined && !isKnownRaster(bytes))) {
+    const png = await sharp(bytes)
+      .resize(1568, 1568, { fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    return { data: png.toString("base64"), mediaType: "image/png" };
+  }
+
+  // Known raster — send as-is; resize if over Anthropic's 5MB soft limit
+  const mediaType = mime ?? inferRasterMime(bytes);
+  if (bytes.length > 4 * 1024 * 1024) {
+    const resized = await sharp(bytes)
+      .resize(1568, 1568, { fit: "inside", withoutEnlargement: true })
+      .toBuffer();
+    return { data: resized.toString("base64"), mediaType };
+  }
+  return { data: bytes.toString("base64"), mediaType };
+}
+
+function isSvgBytes(b: Buffer): boolean {
+  const s = b.slice(0, 512).toString("utf8").replace(/^\xef\xbb\xbf/, "");
+  return /^\s*(?:<\?xml[\s\S]*?)?(?:<!--[\s\S]*?-->\s*)*<svg/i.test(s);
+}
+
+function isPdfBytes(b: Buffer): boolean {
+  return b.slice(0, 8).toString("ascii").includes("%PDF");
+}
+
+function isKnownRaster(b: Buffer): boolean {
+  // JPEG: FF D8 FF  |  PNG: 89 50 4E 47  |  GIF: 47 49 46  |  WEBP: 52 49 46 46 .. 57 45 42 50
+  return (b[0] === 0xff && b[1] === 0xd8) ||
+    (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) ||
+    (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) ||
+    (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45);
+}
+
+function inferRasterMime(b: Buffer): string {
+  if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50) return "image/png";
+  if (b[0] === 0x47 && b[1] === 0x49) return "image/gif";
+  if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57) return "image/webp";
+  return "image/png";
+}
+
 // ── Anthropic Messages API client ─────────────────────────────────────────────
+
+type TextBlock  = { type: "text";  text: string };
+type ImageBlock = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+type ContentBlock = TextBlock | ImageBlock;
 
 interface AnthropicMessage {
   type: string;
@@ -65,11 +131,31 @@ export class AnthropicClient implements Brain {
 
     // [ctx] at the top of the user content satisfies the SOUL contract's
     // "every turn begins with [ctx]" rule.
-    const userContent = req.contextHeader
+    const textContent = req.contextHeader
       ? `${req.contextHeader}\n\n${req.message}`
       : req.message;
 
-    const messages: { role: "user" | "assistant"; content: string }[] = [
+    // Build current user message — multimodal when image bytes are present.
+    let userContent: string | ContentBlock[];
+    if (req.imageBytes) {
+      try {
+        const { data, mediaType } = await prepareImageForVision(req.imageBytes, req.imageMime);
+        userContent = [
+          { type: "image", source: { type: "base64", media_type: mediaType, data } },
+          { type: "text",  text: textContent },
+        ];
+        console.log(`[brain] vision: mediaType=${mediaType} size=${req.imageBytes.length}`);
+      } catch (err) {
+        // Rasterization failure — fall back to text so the turn doesn't stall
+        console.error(`[brain] vision prep failed, falling back to text: ${err}`);
+        userContent = textContent;
+      }
+    } else {
+      userContent = textContent;
+    }
+
+    // History is text-only (multimodal history would be prohibitively expensive).
+    const messages: { role: "user" | "assistant"; content: string | ContentBlock[] }[] = [
       ...req.history,
       { role: "user", content: userContent },
     ];
