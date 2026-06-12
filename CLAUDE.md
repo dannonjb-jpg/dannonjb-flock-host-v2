@@ -70,27 +70,31 @@ Last verified 2026-06-12:
 | `confirm_asset` action + `pending_assets` in `[ctx]` | ✓ 2026-06-11 |
 | Media-send `msg_sent` logging | ✓ 2026-06-12 |
 | Manual Zelle/OXXO payment route | ✓ 2026-06-12; `/manual/confirm` + `/manual/pending` on localhost webhook server |
-| Penn orch relay (SKILL_OCLAW + oclaw-push.js) | ✓ 2026-06-12 |
+| Penn orch relay (oclaw-push.js send-only notifier, cron */5) | ✓ 2026-06-12 |
 | pm2 zombie (`penn-gateway`, 3243 restarts) | ✓ deleted 2026-06-12; systemd is sole supervisor |
 | penn-orch.js standalone runner | ✓ retired 2026-06-12; loud guard added; exports intact |
+| SKILL_OCLAW.md (duplicate surface) | ✓ removed 2026-06-12; `oclaw-bot.js` is canonical |
 
 ## OpenClaw orch bot — built to gate, pending BotFather token
 
+Canonical command surface: `oclaw-bot.js` (dedicated token, pm2). `SKILL_OCLAW.md` removed — it was a workaround before the dedicated bot was confirmed viable; two surfaces on different tokens is duplicate implementations, not redundancy.
+
 `/opt/openclaw-orch/` wired and tested:
-- `penn-orch.js` — pure library; `node penn-orch.js` throws with routing instructions
-- `oclaw-bot.js` — dedicated-token bot; guards reject missing/Penn's token
-- `ecosystem.config.js` — pm2 config (oclaw-bot only; host + Penn excluded)
+- `penn-orch.js` — pure library; `node penn-orch.js` throws with routing instructions; `runReclaim` uses `execFile` (args array, no shell) and `RECLAIM_MIN` from env — Telegram text never reaches the arg
+- `oclaw-bot.js` — dedicated-token bot; guards reject missing/Penn's token by collision check
+- `ecosystem.config.js` — reads token from credentials file at load time (survives `pm2 resurrect`); fails loudly if file absent; pm2 config for oclaw-bot only
 - `oclaw-push.js` — cron send-only notifier (*/5, no getUpdates)
 
-All command paths tested against live DB. `/reclaim` classification **(b)**: shells to `oclaw reclaim`, touches only `tasks` in `openclaw.db` — zero contact with `orders`/`payments`.
+`/reclaim` classification **(b)**: separate database (`openclaw.db` ≠ `flock.db`), shells to `oclaw reclaim`, zero contact with `orders`/`payments`/`escalation`. Test: ran `--older-than 1` against live DB; result was `no active tasks` (all tasks in completed/pending state, none reclaimed, zero residue).
 
 **To go live** (once BotFather token in hand):
 ```bash
-echo "export OCLAW_TELEGRAM_TOKEN=<token>" > /root/.openclaw/credentials/oclaw-bot-token
-chmod 600 /root/.openclaw/credentials/oclaw-bot-token
-source /root/.openclaw/credentials/oclaw-bot-token
+# Write token as plain value — no shell export syntax, no world-readable window
+install -m600 /dev/null /root/.openclaw/credentials/oclaw-bot-token
+printf '%s' '<token>' > /root/.openclaw/credentials/oclaw-bot-token
+# ecosystem.config.js reads the file at pm2 start — no source needed
 cd /opt/openclaw-orch && pm2 start ecosystem.config.js && pm2 save
-pm2 logs oclaw-bot --lines 20
+pm2 logs oclaw-bot --lines 20   # confirm masked token logged + no 409
 ```
 
 ## Remaining work
