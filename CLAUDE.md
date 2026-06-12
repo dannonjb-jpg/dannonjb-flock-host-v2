@@ -64,5 +64,9 @@ Last verified 2026-06-12:
 1. ~~FIFO burst harness test~~ — done (`test/fifo-burst.test.ts`)
 2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
 3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
-4. Loose threads: manual Zelle/OXXO route, media-send logging gap, intake follow-through
+4. Loose threads:
+   - ~~try/catch gap on `onMockupRejected` + `onRevisionNote` generate() calls~~ — done (2026-06-11)
+   - ~~Intake follow-through (`confirm_asset`)~~ — done (2026-06-11); `confirm_asset` action wired in `actions.ts`, `action-applier.ts`; `pending_assets=N` added to `[ctx]`; SOUL contract updated
+   - **Media-send logging gap** — assets deliver but no `msg_sent`-with-URLs event logged
+   - **Manual Zelle/OXXO payment route** — no host path for manual payment confirmation outside Stripe
 5. ~~Stripe webhook signing secret rotated 2026-06-12~~

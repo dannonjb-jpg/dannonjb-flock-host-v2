@@ -185,14 +185,25 @@ export class AssetStore {
 
         // Check if (jid, bytes_hash) already exists (dedup at binding layer)
         const existing = this.db.prepare(`
-          SELECT asset_id FROM assets
+          SELECT asset_id, asset_type, role, role_source, is_current FROM assets
           WHERE jid = ? AND bytes_hash = ?
           LIMIT 1
-        `).get(input.jid, bytes_hash) as { asset_id: string } | undefined;
+        `).get(input.jid, bytes_hash) as { asset_id: string; asset_type: string; role: string; role_source: string; is_current: number } | undefined;
 
         if (existing) {
-          // Bytes already bound to this jid; return the existing asset_id
-          console.log(`[asset-store] dedup: jid=${input.jid}, bytes=${bytes_hash.slice(0, 8)}... → asset_id=${existing.asset_id}`);
+          // If already confirmed and not current, client is re-sending to restore it — re-promote.
+          if (existing.role_source === 'client_stated' && existing.is_current === 0 && existing.role === 'fidelity') {
+            const maxVerRow = this.db.prepare(`
+              SELECT COALESCE(MAX(version), 0) + 1 as next_v FROM assets
+              WHERE jid = ? AND asset_type = ? AND role = 'fidelity'
+            `).get(input.jid, existing.asset_type) as { next_v: number } | undefined;
+            const nextVersion = maxVerRow?.next_v ?? 1;
+            this.db.prepare(`UPDATE assets SET is_current = 0 WHERE jid = ? AND asset_type = ? AND is_current = 1`).run(input.jid, existing.asset_type);
+            this.db.prepare(`UPDATE assets SET is_current = 1, version = ? WHERE asset_id = ?`).run(nextVersion, existing.asset_id);
+            console.log(`[asset-store] dedup-repromote: jid=${input.jid}, bytes=${bytes_hash.slice(0, 8)}... → asset_id=${existing.asset_id}, version=${nextVersion}`);
+          } else {
+            console.log(`[asset-store] dedup: jid=${input.jid}, bytes=${bytes_hash.slice(0, 8)}... → asset_id=${existing.asset_id}`);
+          }
           return existing.asset_id;
         }
 

@@ -178,9 +178,11 @@ export function buildContextHeader(order: Order, store: Store, assetStore?: Asse
 
   // Logo status — brain needs this to avoid promising mockups before the logo is on file.
   let logoField = "-";
+  let pendingAssets = 0;
   if (assetStore) {
     const logo = assetStore.resolveLogo(order.whatsapp_jid, "current");
     logoField = !logo ? "no" : coarseUsable(logo) ? "yes" : "low_res";
+    pendingAssets = assetStore.pendingAssets(order.whatsapp_jid).length;
   }
 
   return (
@@ -188,6 +190,6 @@ export function buildContextHeader(order: Order, store: Store, assetStore?: Asse
     `turn=${order.turn_count} pending_payment=${pending} ` +
     `price=${priceField} collected=${collectedKeys(order)} ` +
     `failed_pairs=${order.failed_mockup_pairs} digital_rounds=${order.digital_rounds_used} ` +
-    `logo_on_file=${logoField} last_rejected_action=${rejectedField}`
+    `logo_on_file=${logoField} pending_assets=${pendingAssets} last_rejected_action=${rejectedField}`
   );
 }

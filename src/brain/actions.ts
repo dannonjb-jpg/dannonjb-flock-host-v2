@@ -12,6 +12,7 @@ export type MockupVariant = "A" | "B" | "both";
 export type MockupWhich = "A" | "B";
 export type ClientPaymentKind = "deposit" | "balance" | "digital";
 export type EscalateReason = "friction" | "supplier" | "manual";
+export type ConfirmedAssetType = "logo" | "product" | "reference";
 
 export type Action =
   | { type: "collect"; fields: Record<string, unknown> }
@@ -23,6 +24,7 @@ export type Action =
   | { type: "revision_note"; note: string }
   | { type: "approve_for_print" }
   | { type: "digital_complete" }
+  | { type: "confirm_asset"; asset_type: ConfirmedAssetType }
   | { type: "escalate"; reason: EscalateReason; summary?: string }
   | { type: "cancel"; reason: string };
 
@@ -55,6 +57,9 @@ function isEscalateReason(v: unknown): v is EscalateReason {
   // Brain may NOT emit 'mockup_pairs' — that escalation is host-derived (§5).
   return v === "friction" || v === "supplier" || v === "manual";
 }
+function isConfirmedAssetType(v: unknown): v is ConfirmedAssetType {
+  return v === "logo" || v === "product" || v === "reference";
+}
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -84,6 +89,10 @@ export function coerceAction(raw: unknown): Action | null {
       return { type: "approve_for_print" };
     case "digital_complete":
       return { type: "digital_complete" };
+    case "confirm_asset":
+      return isConfirmedAssetType(raw.asset_type)
+        ? { type: "confirm_asset", asset_type: raw.asset_type }
+        : null;
     case "escalate":
       if (!isEscalateReason(raw.reason)) return null;
       return typeof raw.summary === "string"

@@ -80,7 +80,7 @@ Each turn begins with a compact context line. It is ground truth:
 ```
 [ctx] state=<s> track=<t> mockup=<A|B|-> turn=<n> pending_payment=<none|kind>
       price=<amount+ccy|-> collected=<keys present> failed_pairs=<n> digital_rounds=<n>
-      logo_on_file=<yes|no|low_res|-> last_rejected_action=<action_type|->
+      logo_on_file=<yes|no|low_res|-> pending_assets=<n> last_rejected_action=<action_type|->
 ```
 
 - `price` is the client total the host has computed. **It is the only price you may quote.**
@@ -89,6 +89,10 @@ Each turn begins with a compact context line. It is ground truth:
 - `logo_on_file` is whether the client's logo is on file and print-usable. **When `no` or `-`,
   do not request a mockup and do not imply one is coming.** Ask the client to send their logo
   as a file or document first. When `low_res`, ask for a higher-resolution or vector version.
+- `pending_assets` is the count of images the client sent that have not yet been confirmed as
+  a specific type. When `pending_assets > 0`, the host is asking you what to do with them.
+  Identify each one by asking the client (if unclear), then emit `confirm_asset` for each.
+  Only after `confirm_asset` for a logo will `logo_on_file` advance to `yes`.
 - `last_rejected_action` is the most recent action the host rejected last turn. Use it to
   understand why a prior request failed and correct course — never re-propose the same action
   without addressing the rejection reason.
@@ -131,6 +135,11 @@ it from your intents plus payment/confirmation events.
   `{"type":"approve_for_print"}`
 - **`digital_complete`** - (digital) client satisfied or rounds exhausted.
   `{"type":"digital_complete"}`
+- **`confirm_asset`** - confirms what a pending image is. Emit once per asset, in the same
+  turn you ask/confirm with the client. `asset_type` is `logo`, `product`, or `reference`.
+  `{"type":"confirm_asset","asset_type":"logo"}` — confirms the oldest unconfirmed image.
+  Only after this does `logo_on_file` advance. Never assume an image is a logo without the
+  client saying so; never emit this before the client has identified it.
 - **`escalate`** - needs a human / outside your authority.
   `{"type":"escalate","reason":"friction|supplier|manual","summary":"..."}`
 - **`cancel`** - client abandons and no money is held.

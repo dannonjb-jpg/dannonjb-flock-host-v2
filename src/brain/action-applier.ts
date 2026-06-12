@@ -128,6 +128,8 @@ export class ActionApplier {
         return this.onApproveForPrint(order);
       case "digital_complete":
         return this.onDigitalComplete(order);
+      case "confirm_asset":
+        return this.onConfirmAsset(order, action.asset_type);
       case "escalate":
         return this.onEscalate(order, action.reason, action.summary);
       case "cancel":
@@ -185,6 +187,17 @@ export class ActionApplier {
   private onSetTrack(order: Order, track: "physical" | "digital"): string | null {
     if (order.track !== "undecided") return `track already set to ${order.track}`;
     this.d.store.patchOrder(order.order_id, { track });
+    return null;
+  }
+
+  private onConfirmAsset(order: Order, assetType: "logo" | "product" | "reference"): string | null {
+    const pending = this.d.assetStore.pendingAssets(order.whatsapp_jid);
+    if (pending.length === 0) return "no pending asset to confirm";
+    const focus = pending[0]!;
+    const role = assetType === "reference" ? "reference" : "fidelity";
+    const promote = role === "fidelity";
+    this.d.assetStore.confirmAssetRole(focus.asset_id, assetType, role, promote);
+    console.log(`[action-applier] confirm_asset: asset_id=${focus.asset_id}, type=${assetType}, promoted=${promote}`);
     return null;
   }
 
@@ -267,7 +280,19 @@ export class ActionApplier {
     const brief = (notes ?? "").trim() || this.lastBrief(order);
     this.d.store.transition(order.order_id, "mockup");
     const fresh = this.d.store.getOrder(order.order_id)!;
-    const urls = await this.d.mockups.generate(fresh, "both", brief);
+    let urls;
+    try {
+      urls = await this.d.mockups.generate(fresh, "both", brief);
+    } catch (e) {
+      void escalateForMockupFailure(
+        this.d.store,
+        this.d.notifier,
+        fresh.order_id,
+        "generate_failed",
+        `[escalation:mockup_gen] order ${fresh.order_id}: generate threw: ${(e as Error).message}`
+      );
+      return `mockup generation failed: ${(e as Error).message}`;
+    }
     const spec = readSpec(fresh);
     spec.mockup_urls = urls;
     spec.last_brief = brief; // Update brief if new notes provided
@@ -399,7 +424,19 @@ export class ActionApplier {
     // Consume a round and regen feeding the note.
     this.d.store.patchOrder(cur.order_id, { digital_rounds_used: roundsUsed + 1 });
     const spec = readSpec(cur);
-    const urls = await this.d.mockups.generate(cur, "both", note);
+    let urls;
+    try {
+      urls = await this.d.mockups.generate(cur, "both", note);
+    } catch (e) {
+      void escalateForMockupFailure(
+        this.d.store,
+        this.d.notifier,
+        cur.order_id,
+        "generate_failed",
+        `[escalation:mockup_gen] order ${cur.order_id}: generate threw: ${(e as Error).message}`
+      );
+      return `mockup generation failed: ${(e as Error).message}`;
+    }
     spec.mockup_urls = urls;
     spec.last_brief = note; // Update brief for context in next turn
     this.d.store.patchOrder(cur.order_id, { job_spec: JSON.stringify(spec) });
