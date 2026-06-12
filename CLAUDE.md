@@ -75,7 +75,7 @@ Last verified 2026-06-12:
 | pm2 zombie (`penn-gateway`, 3243 restarts) | ✓ deleted 2026-06-12; systemd is sole supervisor |
 | penn-orch.js standalone runner | ✓ retired 2026-06-12; loud guard added; exports intact |
 | SKILL_OCLAW.md (duplicate surface) | ✓ removed 2026-06-12; `oclaw-bot.js` is canonical |
-| Prompt caching investigation | ✓ 2026-06-12; zero `cache_control` breakpoints found; system prompt concatenates static SOUL+pricing with volatile `[ctx]` into one string — no stable prefix, caching not yet implemented |
+| Prompt caching | ✓ 2026-06-12; `cache_control: {type:"ephemeral"}` on system prompt block in `hermes-client.ts:129`; `[ctx]` travels with user message (not system prompt); ~4000-token SOUL+pricing prefix is well above the 2048-token cache threshold; no beta header needed (GA feature); `cache_write` / `cache_read` logged per turn |
 
 ## OpenClaw orch bot — built to gate, pending BotFather token
 
@@ -208,8 +208,6 @@ Penn writes queue task files as `.md` with this frontmatter — parseable, never
 ---
 
 ## Remaining work
-
-- **Prompt caching** (priority: cost reduction) — restructure so the volatile `[ctx]` block moves out of the system prompt string and into the messages array (as the first `user` turn or a separate `cache_control` block). This gives the static SOUL+pricing prefix a stable identity so Anthropic can cache it across turns. Key files: `src/brain/hermes-client.ts` (`buildContextHeader`, `AnthropicClient.ask`) and `src/index.ts` (system prompt assembly at boot). The static portion (SOUL contract + pricing) is loaded once at boot — it only needs to be separated from `[ctx]` to become cacheable. Add `cache_control: { type: "ephemeral" }` to the static system prompt block once the split is in place.
 
 - **`flock-qr-field`** (pending, priority 90 — scale: lower number = sooner; 90 = lowest urgency, do last) — QR content brain field; Phase 2, deliberately deferred. Dependency chain when picked up: brain emits `qr_content` → compositor invariant #4 stops returning null → QR renders from `wa.me` link. Nothing acts on it until the brain field lands. `qr_content` absent → compositor returns null is correct behavior until then (see `sharp-compositor.ts` invariant #4).
 
