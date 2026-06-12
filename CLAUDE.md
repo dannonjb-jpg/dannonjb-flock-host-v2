@@ -45,9 +45,7 @@ npm test                          # core invariants
 npx tsx test/fifo-burst.test.ts   # FIFO burst serialization
 ```
 Last verified 2026-06-12:
-- `npm test`: 17/18 passed. One pre-existing stub failure: "host lifecycle: read receipt,
-  reply sent, msg_sent linked to inbound" — `store.getLastRejectedAction is not a function`.
-  This stub gap predates all recent work; do not count it as a regression.
+- `npm test`: 18/18 passed.
 - `npx tsx test/fifo-burst.test.ts`: 4/4 passed.
 
 ## Things that look wrong but are intentional
