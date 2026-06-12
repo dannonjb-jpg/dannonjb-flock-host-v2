@@ -58,48 +58,41 @@ Last verified 2026-06-12:
 - **`src/order-store/` and `src/scheduler.ts` don't exist** — policy names; actual
   paths are `src/store/` and `src/ops/scheduler.ts`.
 
-## Active remaining work (as of 2026-06-12)
-1. ~~FIFO burst harness test~~ — done (`test/fifo-burst.test.ts`)
-2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
-3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
-4. ~~Stripe webhook signing secret rotated 2026-06-12~~
-5. Loose threads (all done):
-   - ~~try/catch gap on `onMockupRejected` + `onRevisionNote` generate() calls~~ — done (2026-06-11)
-   - ~~Intake follow-through (`confirm_asset`)~~ — done (2026-06-11); `confirm_asset` action wired in `actions.ts`, `action-applier.ts`; `pending_assets=N` added to `[ctx]`; SOUL contract updated
-   - ~~Media-send logging gap~~ — done (2026-06-12); `msg_sent` with `{media:true,urls}` appended after `sendMedia` succeeds, before `awaiting_decision` transition
-   - ~~Manual Zelle/OXXO payment route~~ — done (2026-06-12); `/manual/confirm` (POST) and `/manual/pending` (GET) on the same localhost webhook server; `listPendingManualPayments()` on Store; server now always starts (Stripe webhook still conditional on secrets)
-6. ~~Penn orch Telegram bot~~ (`orch-penn-telegram`) — done (2026-06-12); Penn skill `SKILL_OCLAW.md` wired in `Penn_core/skills/`; push-only notifier `oclaw-push.js` (cron */5) uses Penn's existing token (no getUpdates conflict); no new bot needed.
+## Completed work (as of 2026-06-12)
+
+| Item | Status |
+|---|---|
+| FIFO burst harness test | ✓ `test/fifo-burst.test.ts` |
+| 4→2 mockup bug | moot — SharpCompositor emits exactly A+B |
+| Compositor swap + Phase B gate | ✓ `b12f53e`; pre-commit tripwire removed |
+| Stripe webhook secret rotated | ✓ 2026-06-12 |
+| try/catch on `onMockupRejected` + `onRevisionNote` | ✓ 2026-06-11 |
+| `confirm_asset` action + `pending_assets` in `[ctx]` | ✓ 2026-06-11 |
+| Media-send `msg_sent` logging | ✓ 2026-06-12 |
+| Manual Zelle/OXXO payment route | ✓ 2026-06-12; `/manual/confirm` + `/manual/pending` on localhost webhook server |
+| Penn orch relay (SKILL_OCLAW + oclaw-push.js) | ✓ 2026-06-12 |
+| pm2 zombie (`penn-gateway`, 3243 restarts) | ✓ deleted 2026-06-12; systemd is sole supervisor |
+| penn-orch.js standalone runner | ✓ retired 2026-06-12; loud guard added; exports intact |
 
 ## OpenClaw orch bot — built to gate, pending BotFather token
 
-`/opt/openclaw-orch/` contains a fully-wired dedicated Telegram bot (separate token from Penn):
-- `penn-orch.js` — pure library; standalone runner removed; `node penn-orch.js` throws with routing instructions
-- `oclaw-bot.js` — dedicated bot entrypoint; token guard rejects missing token and Penn's token by name
-- `ecosystem.config.js` — pm2 config for `oclaw-bot` only (host and Penn excluded)
-- `oclaw-push.js` — cron send-only notifier (already running */5, no getUpdates)
+`/opt/openclaw-orch/` wired and tested:
+- `penn-orch.js` — pure library; `node penn-orch.js` throws with routing instructions
+- `oclaw-bot.js` — dedicated-token bot; guards reject missing/Penn's token
+- `ecosystem.config.js` — pm2 config (oclaw-bot only; host + Penn excluded)
+- `oclaw-push.js` — cron send-only notifier (*/5, no getUpdates)
 
-**All command paths tested against live DB — actual output:**
-- `/status` → `pending 1 (blocked 0) · active 0 · completed 3`
-- `/tasks` → `no active tasks`
-- `/stale` → `none stale`
-- `/reclaim` → shells to `oclaw reclaim --older-than 45`; no direct orders/payments write; tables: `tasks` in `openclaw.db` only (**classification b**)
-- event push cursor: 0→10 (404 expected with placeholder token)
+All command paths tested against live DB. `/reclaim` classification **(b)**: shells to `oclaw reclaim`, touches only `tasks` in `openclaw.db` — zero contact with `orders`/`payments`.
 
 **To go live** (once BotFather token in hand):
 ```bash
-# Write token to credentials file — not in chat, not in repo
 echo "export OCLAW_TELEGRAM_TOKEN=<token>" > /root/.openclaw/credentials/oclaw-bot-token
 chmod 600 /root/.openclaw/credentials/oclaw-bot-token
 source /root/.openclaw/credentials/oclaw-bot-token
 cd /opt/openclaw-orch && pm2 start ecosystem.config.js && pm2 save
-pm2 logs oclaw-bot --lines 20  # verify startup, no 409, no token collision error
+pm2 logs oclaw-bot --lines 20
 ```
 
-## Notes for Opus — resolved
+## Remaining work
 
-### N1 · pm2 zombie — DONE (2026-06-12)
-Pre-flight confirmed: PID 328441 = systemd cgroup = port 18789 owner. pm2 was crash-looping EADDRINUSE.
-Executed: `pm2 delete penn-gateway && pm2 save`. Post-check: penn-gateway absent from pm2 list, systemd still active at 17h+, port still bound to PID 328441. One supervisor (systemd). ✓
-
-### N2 · penn-orch.js runner — DONE (2026-06-12)
-Runner section removed. `node penn-orch.js` now throws with explicit routing instructions. Exports intact. `node -e "Object.keys(require(...))"` confirms library surface with no getUpdates side effect. ✓
+- **`flock-qr-field`** (pending, priority 90) — QR content brain field; Phase 2, deferred. `qr_content` absent → compositor returns null (intentional, see `sharp-compositor.ts` invariant #4).
