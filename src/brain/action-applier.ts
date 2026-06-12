@@ -214,8 +214,8 @@ export class ActionApplier {
     const logo = this.d.assetStore.resolveLogo(order.whatsapp_jid, 'current');
     if (!logo) return "no logo on file — ask client to upload a logo image";
     if (!coarseUsable(logo)) return `logo below print floor (${logo.width_px}x${logo.height_px}px, vector=${logo.is_vector}) — ask client for higher resolution`;
-    const product = this.d.assetStore.resolveAsset(order.whatsapp_jid, 'product', 'current');
-    if (product && !coarseUsable(product)) return `product asset below print floor (${product.width_px}x${product.height_px}px, vector=${product.is_vector}) — ask client for higher resolution`;
+    // Product images are not floor-gated: clients send phone photos and don't have
+    // print-res versions. Compositor uses what's there; supplier flags quality at production.
     // Move to `mockup` (generating).
     let cur = order;
     if (cur.state === "intake") cur = this.d.store.transition(cur.order_id, "mockup");
