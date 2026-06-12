@@ -1,0 +1,33 @@
+{
+  "_comment": "Model strings MUST match your Hermes provider format. Direct Anthropic uses e.g. 'claude-sonnet-4-6'; via OpenRouter it's 'anthropic/claude-sonnet-4.6'; via Nous Portal it differs again. Verify against `hermes model` before trusting these.",
+  "tiers": {
+    "cheap": "claude-haiku-4-5-20251001",
+    "smart": "claude-sonnet-4-6"
+  },
+  "defaultTier": "cheap",
+  "stickiness": {
+    "enabled": true,
+    "latchTier": "smart"
+  },
+  "smartPhases": [
+    "first_contact",
+    "intake",
+    "mockup",
+    "revision_loop",
+    "dispute",
+    "negotiation",
+    "quote_objection"
+  ],
+  "frictionKeywords": [
+    "refund", "cancel", "wrong", "unhappy", "disappointed", "mistake",
+    "not what", "speak to", "manager", "complaint", "late", "never arrived", "broken"
+  ],
+  "complexity": {
+    "smartIfCharsOver": 280,
+    "smartIfQuestionsOver": 2,
+    "uncertaintyMarkers": [
+      "not sure", "maybe", "confused", "don't understand", "what do you mean", "can you explain"
+    ]
+  },
+  "trivialMaxChars": 60
+}

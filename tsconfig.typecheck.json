@@ -1,0 +1,26 @@
+{
+  "//": "Dev-only. Verifies the invariant-bearing core compiles WITHOUT installing the external SDKs (better-sqlite3, baileys, stripe). It excludes the four adapter files and the wiring entrypoint that import those packages. The production build uses tsconfig.json after `npm install`.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "noEmit": true,
+    "rootDir": ".",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.json", "test/**/*.ts", "typecheck/**/*.d.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/index.ts",
+    "src/store/sqlite-store.ts",
+    "src/channel/baileys-adapter.ts",
+    "src/payments/stripe-provider.ts"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "flock-node-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Flock Node host — mouth, ears, ledger, and clock. The brain proposes; the host disposes.",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:core": "tsc -p tsconfig.typecheck.json",
+    "test": "tsx test/core.test.ts"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc13",
+    "better-sqlite3": "^11.3.0",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.0",
+    "stripe": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

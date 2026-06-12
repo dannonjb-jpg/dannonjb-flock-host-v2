@@ -1,0 +1,66 @@
+{
+  "version": "2.1",
+  "updated": "2026-05-26",
+  "pricing_constraints": {
+    "min_quote": 150,
+    "soft_ceiling": 3000,
+    "margin_floor": 0.3,
+    "fx_buffer": 0.05,
+    "digital_file_fee": 5.00
+  },
+  "urgency_multipliers": {
+    "standard": { "days": "7-10", "B": 1.0 },
+    "rush":     { "days": "4-7",  "B": 1.2 },
+    "urgent":   { "days": "under-3", "B": 1.5 }
+  },
+  "quantity_discounts": {
+    "unit": [
+      { "min": 1,  "max": 2,    "discount": 0.00 },
+      { "min": 3,  "max": 7,    "discount": 0.07 },
+      { "min": 8,  "max": 12,   "discount": 0.12 },
+      { "min": 13, "max": null, "discount": 0.15 }
+    ],
+    "sqft": [
+      { "min": 0,   "max": 24,   "discount": 0.00 },
+      { "min": 25,  "max": 99,   "discount": 0.07 },
+      { "min": 100, "max": 299,  "discount": 0.12 },
+      { "min": 300, "max": null, "discount": 0.15 }
+    ],
+    "per_1000": [
+      { "min": 1,  "max": 1,    "discount": 0.00 },
+      { "min": 2,  "max": 4,    "discount": 0.07 },
+      { "min": 5,  "max": null, "discount": 0.12 }
+    ]
+  },
+  "revision_policy": {
+    "free_rounds": 3,
+    "additional_cost": 75
+  },
+  "products": {
+    "mug":                       { "name":"Ceramic Mug","pricing_unit":"unit","pricing_method":"seed_x_multiplier","seed_price":4.71,"multiplier":4.0,"base_price":18.84,"discount_type":"unit","dan_approval":false,"turnaround_days":"5-7" },
+    "tshirt":                    { "name":"T-Shirt (DTF)","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":25.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"5-7" },
+    "hat":                       { "name":"Hat / Cap","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":22.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"5-7" },
+    "bag":                       { "name":"Tote Bag","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":18.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"5-7" },
+    "flag":                      { "name":"Custom Flag","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":45.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"5-10" },
+    "sky_dancer":                { "name":"Sky Dancer","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":350.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"7-14" },
+    "banner_standard":           { "name":"Banner Standard","pricing_unit":"sqft","pricing_method":"benchmark_Y","base_price_per_sqft":2.95,"discount_type":"sqft","dan_approval":false,"turnaround_days":"3-5" },
+    "banner_uv":                 { "name":"Banner UV","pricing_unit":"sqft","pricing_method":"benchmark_Y","base_price_per_sqft":4.90,"discount_type":"sqft","dan_approval":false,"turnaround_days":"3-5" },
+    "vinyl_mesh_materials":      { "name":"Vinyl / Mesh","pricing_unit":"sqft","pricing_method":"benchmark_Y","base_price_per_sqft":4.00,"discount_type":"sqft","dan_approval":false,"turnaround_days":"3-5" },
+    "business_cards":            { "name":"Business Cards","pricing_unit":"per_1000","pricing_method":"benchmark_Y","base_price":55.00,"discount_type":"per_1000","dan_approval":false,"turnaround_days":"3-5" },
+    "flyer":                     { "name":"Flyers 8.5x11","pricing_unit":"per_1000","pricing_method":"benchmark_Y","base_price":80.00,"discount_type":"per_1000","dan_approval":false,"turnaround_days":"3-5" },
+    "brochure":                  { "name":"Brochure Trifold","pricing_unit":"per_1000","pricing_method":"benchmark_Y","base_price":120.00,"discount_type":"per_1000","dan_approval":false,"turnaround_days":"3-5" },
+    "sticker":                   { "name":"Stickers","pricing_unit":"per_1000","pricing_method":"benchmark_Y","base_price":90.00,"discount_type":"per_1000","dan_approval":false,"turnaround_days":"3-5" },
+    "tabloid":                   { "name":"Tabloid Print","pricing_unit":"unit","pricing_method":"benchmark_Y","base_price":8.00,"discount_type":"unit","dan_approval":false,"turnaround_days":"1-3" },
+    "business_signage_indoor":   { "name":"Indoor Illuminated Sign","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[900,1500],"discount_type":null,"dan_approval":true,"turnaround_days":"10-21" },
+    "business_signage_exterior_flat": { "name":"Exterior Flat Sign","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[350,600],"discount_type":null,"dan_approval":true,"turnaround_days":"7-14" },
+    "business_signage_exterior_lit":  { "name":"Exterior Illuminated Box","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[1500,2500],"discount_type":null,"dan_approval":true,"turnaround_days":"14-21" },
+    "channel_letters":           { "name":"Channel Letters","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[3500,6000],"discount_type":null,"dan_approval":true,"turnaround_days":"21-30" },
+    "monument_pylon":            { "name":"Monument / Pylon Sign","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[5000,null],"discount_type":null,"dan_approval":true,"turnaround_days":"30+" },
+    "vehicle_wrap_partial":      { "name":"Partial Vehicle Wrap","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[800,1500],"discount_type":null,"dan_approval":true,"turnaround_days":"5-7" },
+    "vehicle_wrap_full":         { "name":"Full Vehicle Wrap","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[2500,4500],"discount_type":null,"dan_approval":true,"turnaround_days":"7-14" },
+    "cut_vinyl":                 { "name":"Cut Vinyl","pricing_unit":"sqft","pricing_method":"seed_x_multiplier","seed_price":null,"multiplier":3.5,"discount_type":"sqft","dan_approval":true },
+    "social_media_assets":       { "name":"Social Media Package","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":[150,300],"discount_type":null,"dan_approval":true,"turnaround_days":"3-5" },
+    "packaging":                 { "name":"Custom Packaging","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":null,"discount_type":null,"dan_approval":true },
+    "specialty_fabrication":     { "name":"Specialty Fabrication","pricing_unit":"job","pricing_method":"benchmark_Y","benchmark_Y_range":null,"discount_type":null,"dan_approval":true }
+  }
+}
