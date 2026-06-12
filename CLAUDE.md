@@ -187,11 +187,15 @@ duration — touch frequently and the threshold won't matter.
    mv /root/queue/claimed/NNN-slug.worker.md /root/queue/done/NNN-slug.worker.md
    ```
 
-**Session start — run the sweep (also runs via */5 cron):**
+**Session start — run the sweep with `--boot` (cron omits this flag):**
 ```bash
-bash /root/queue/queue-sweep.sh
+bash /root/queue/queue-sweep.sh --boot
 ```
-Reclaims stale orphans → `pending/`. Routes `.hot` orphans (owed writeback) → `claimed-review/` + Telegram notify.
+`--boot` adds opus-sessions/ crash detection. Cron omits it: Opus has no heartbeat between turns,
+so cron scanning opus-sessions/ would false-alarm on every human pause. Boot-time is the right
+signal — an orphaned `.in-progress.opus.md` still present when the next session starts is a real
+crash; a paused session finalizes its own record on resume.
+Reclaims stale worker claims → `pending/`. Routes `.hot` orphans → `claimed-review/` + Telegram.
 
 **Queue task YAML frontmatter (machine-readable without .json):**
 ```markdown
