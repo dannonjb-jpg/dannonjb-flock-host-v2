@@ -301,6 +301,17 @@ export class SqliteStore implements Store {
       .all() as Payment[];
   }
 
+  listPendingManualPayments(): Payment[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM payments
+         WHERE status = 'pending' AND direction = 'in'
+           AND method IS NOT NULL AND method != 'stripe'
+         ORDER BY created_at`,
+      )
+      .all() as Payment[];
+  }
+
   inboundHasReply(inboundEventId: string): boolean {
     const row = this.db
       .prepare(`SELECT 1 FROM events WHERE type = 'msg_sent' AND inbound_event_id = ? LIMIT 1`)

@@ -66,5 +66,5 @@ Last verified 2026-06-12:
    - ~~try/catch gap on `onMockupRejected` + `onRevisionNote` generate() calls~~ — done (2026-06-11)
    - ~~Intake follow-through (`confirm_asset`)~~ — done (2026-06-11); `confirm_asset` action wired in `actions.ts`, `action-applier.ts`; `pending_assets=N` added to `[ctx]`; SOUL contract updated
    - ~~Media-send logging gap~~ — done (2026-06-12); `msg_sent` with `{media:true,urls}` appended after `sendMedia` succeeds, before `awaiting_decision` transition
-   - **Manual Zelle/OXXO payment route** — no host path for manual payment confirmation outside Stripe
+   - ~~Manual Zelle/OXXO payment route~~ — done (2026-06-12); `/manual/confirm` (POST) and `/manual/pending` (GET) on the same localhost webhook server; `listPendingManualPayments()` on Store; server now always starts (Stripe webhook still conditional on secrets)
 5. ~~Stripe webhook signing secret rotated 2026-06-12~~

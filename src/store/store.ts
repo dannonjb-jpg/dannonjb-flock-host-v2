@@ -96,6 +96,8 @@ export interface Store {
   findUnansweredInbound(): EventRow[];
   /** §9: payments stuck `pending` that already have an external_ref. */
   findPendingPaymentsWithExternalRef(): Payment[];
+  /** Manual payment confirmation: pending inbound payments not via Stripe (Zelle/OXXO/cash). */
+  listPendingManualPayments(): Payment[];
   /** True if this inbound has already been answered (a msg_sent links to it). */
   inboundHasReply(inboundEventId: string): boolean;
   /**

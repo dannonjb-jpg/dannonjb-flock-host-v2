@@ -125,17 +125,16 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
-  // §15 — Stripe webhook for real-time payment confirmation.
-  // Only started when STRIPE_WEBHOOK_SECRET is configured; startup reconcile is the fallback.
-  if (cfg.stripe.webhookSecret && process.env.STRIPE_SECRET_KEY) {
-    startWebhookServer({
-      port: cfg.stripe.webhookPort,
-      webhookSecret: cfg.stripe.webhookSecret,
-      stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-      host,
-      store,
-    });
-  }
+  // §15 — admin HTTP server (localhost-only).
+  // /manual/confirm and /manual/pending always active (Zelle/OXXO/cash confirmation path).
+  // /stripe/webhook additionally active when STRIPE_WEBHOOK_SECRET + STRIPE_SECRET_KEY are set.
+  startWebhookServer({
+    port: cfg.stripe.webhookPort,
+    webhookSecret: cfg.stripe.webhookSecret,
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+    host,
+    store,
+  });
 
   console.log("[boot] Flock host up.");
 }
