@@ -58,13 +58,40 @@ Last verified 2026-06-12:
 - **`src/order-store/` and `src/scheduler.ts` don't exist** — policy names; actual
   paths are `src/store/` and `src/ops/scheduler.ts`.
 
-## Active remaining work (as of 2026-06-11)
+## Active remaining work (as of 2026-06-12)
 1. ~~FIFO burst harness test~~ — done (`test/fifo-burst.test.ts`)
 2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
 3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
-4. Loose threads:
+4. ~~Stripe webhook signing secret rotated 2026-06-12~~
+5. Loose threads (all done):
    - ~~try/catch gap on `onMockupRejected` + `onRevisionNote` generate() calls~~ — done (2026-06-11)
    - ~~Intake follow-through (`confirm_asset`)~~ — done (2026-06-11); `confirm_asset` action wired in `actions.ts`, `action-applier.ts`; `pending_assets=N` added to `[ctx]`; SOUL contract updated
    - ~~Media-send logging gap~~ — done (2026-06-12); `msg_sent` with `{media:true,urls}` appended after `sendMedia` succeeds, before `awaiting_decision` transition
    - ~~Manual Zelle/OXXO payment route~~ — done (2026-06-12); `/manual/confirm` (POST) and `/manual/pending` (GET) on the same localhost webhook server; `listPendingManualPayments()` on Store; server now always starts (Stripe webhook still conditional on secrets)
-5. ~~Stripe webhook signing secret rotated 2026-06-12~~
+6. ~~Penn orch Telegram bot~~ (`orch-penn-telegram`) — done (2026-06-12); Penn skill `SKILL_OCLAW.md` wired in `Penn_core/skills/`; push-only notifier `oclaw-push.js` (cron */5) uses Penn's existing token (no getUpdates conflict); no new bot needed.
+
+---
+
+## Notes for Opus — review and decide
+
+### N1 · pm2/systemd dual-supervision of Penn (action required)
+
+`pm2 list` shows `penn-gateway` (id=1) with **3,243 restarts** and status `waiting`. Root cause: the systemd unit `openclaw-penn.service` owns port 18789 (running, healthy, 16h+ uptime). pm2 starts the same process, hits `EADDRINUSE`, crashes, repeats forever.
+
+**Violation:** the no-dual-supervision rule (one supervisor only). pm2 is the zombie; systemd is the authoritative owner.
+
+**Proposed fix:** `pm2 delete penn-gateway && pm2 save` — removes the zombie entry. Systemd continues as sole supervisor. Restart policy and logging stay in the unit file.
+
+**Opus decision needed:** confirm the systemd unit is the intended supervisor, then authorize `pm2 delete penn-gateway`. Destructive (removes pm2 entry); reversible (can re-add if needed).
+
+---
+
+### N2 · `penn-orch.js` standalone runner — now redundant
+
+`/opt/openclaw-orch/penn-orch.js` was written with a standalone runner (getUpdates loop + setInterval event push + command handler). The `orch-penn-telegram` task is now closed via:
+- Penn skill (`SKILL_OCLAW.md`) — handles `/oclaw-*` commands inside Penn's own getUpdates loop
+- `oclaw-push.js` cron — push-only event notifier using Penn's token
+
+`penn-orch.js`'s standalone runner is therefore **unused and should not be started** (would create a second getUpdates consumer on Penn's token). The exported functions (`queueSummary`, `activeTasks`, etc.) remain importable if ever needed.
+
+**Opus decision needed:** should `penn-orch.js` have its standalone runner section removed entirely (prevent accidental `node penn-orch.js` from fighting Penn), or just leave the existing comment warning in place?
