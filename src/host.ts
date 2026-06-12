@@ -341,6 +341,13 @@ export class Host {
         }
         
         if (sent > 0) {
+          this.d.store.appendEvent({
+            order_id: p.orderId,
+            actor: "flock",
+            type: "msg_sent",
+            payload: JSON.stringify({ media: true, urls: p.urls }),
+            inbound_event_id: inboundEventId,
+          });
           // Only transition after confirmed send
           this.d.store.transition(p.orderId, "awaiting_decision", { presented: true });
         } else {
