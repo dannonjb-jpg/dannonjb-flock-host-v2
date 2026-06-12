@@ -65,4 +65,4 @@ Last verified 2026-06-12:
 2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
 3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
 4. Loose threads: manual Zelle/OXXO route, media-send logging gap, intake follow-through
-5. **Stripe webhook signing secret was pasted in chat — ROTATE NOW before any further prod traffic.**
+5. ~~Stripe webhook signing secret rotated 2026-06-12~~
