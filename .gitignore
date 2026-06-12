@@ -1,0 +1,9 @@
+node_modules/
+.env
+flock.db
+flock.db-shm
+flock.db-wal
+flock.db.backup
+wa-auth/
+wa-auth.backup/
+.last-deployed-sha
