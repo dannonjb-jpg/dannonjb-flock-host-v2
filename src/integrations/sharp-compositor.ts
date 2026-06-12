@@ -69,6 +69,16 @@ export interface MockupSink {
   write(order: Order, variant: "A" | "B", png: Buffer): Promise<string>; // -> public URL
 }
 
+// ─── Local overlay type (only the fields sharp.composite() actually uses here) ─
+// Avoids a hard dependency on sharp's internal OverlayOptions type, which is
+// unreachable via moduleResolution=Bundler due to sharp's exports map lacking
+// a "types" condition.
+interface OverlayOptions {
+  input: Buffer | string;
+  left?: number;
+  top?: number;
+}
+
 // ─── Typed failures (no silent degradation) ───────────────────────────────────
 
 export class AssetGateError extends Error {
@@ -249,7 +259,7 @@ export class SharpCompositor implements MockupPipeline {
   private pickTemplate(order: Order, v: "A" | "B"): Template {
     const spec = readJobSpec(order);
     const pt = spec.specs?.product_type ?? "generic";
-    const set = this.deps.registry?.[pt] ?? REGISTRY[pt] ?? REGISTRY["generic"];
+    const set = this.deps.registry?.[pt] ?? REGISTRY[pt] ?? { A: GENERIC_A, B: GENERIC_B };
     return set[v];
   }
 
@@ -262,7 +272,7 @@ export class SharpCompositor implements MockupPipeline {
     const base = await this.composeBase(order, tpl, palette, brief);
 
     // 2. Fidelity overlays — deterministic placement of resolved assets.
-    const layers: sharp.OverlayOptions[] = [];
+    const layers: OverlayOptions[] = [];
     for (const r of tpl.regions) {
       const placed = await this.placeRegion(order, spec, r, W, H);
       if (placed) layers.push(placed);
@@ -306,7 +316,7 @@ export class SharpCompositor implements MockupPipeline {
     r: Region,
     W: number,
     H: number,
-  ): Promise<sharp.OverlayOptions | null> {
+  ): Promise<OverlayOptions | null> {
     const boxW = Math.round(r.w * W);
     const boxH = Math.round(r.h * H);
     const boxLeft = Math.round(r.x * W);
@@ -352,7 +362,7 @@ export class SharpCompositor implements MockupPipeline {
     boxTop: number,
     boxW: number,
     boxH: number,
-  ): sharp.OverlayOptions {
+  ): OverlayOptions {
     return {
       input: buf,
       left: boxLeft + Math.round((boxW - bw) / 2),

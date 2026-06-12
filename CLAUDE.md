@@ -54,7 +54,7 @@ not introduced by recent changes.
 
 ## Active remaining work (as of 2026-06-11)
 1. ~~FIFO burst harness test~~ — done (`test/fifo-burst.test.ts`)
-2. 4→2 mockup bug — `variant:"both"` resolved by SharpCompositor construction (moot once compositor swaps in)
-3. Compositor swap + Phase B gate — coupled, one commit (`scripts/precommit-coupling.sh` enforces)
+2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
+3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
 4. Loose threads: manual Zelle/OXXO route, media-send logging gap, intake follow-through
 5. **Stripe webhook signing secret was pasted in chat — rotate it before next prod deploy**
