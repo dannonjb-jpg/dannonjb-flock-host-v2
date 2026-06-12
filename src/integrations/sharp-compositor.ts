@@ -31,8 +31,8 @@
 //
 //  4. NO SILENT FAILURE. Logo and product assets throw typed errors on miss or
 //     below-floor resolution. QR is the exception: absent qr_content skips the
-//     region (brain field deferred) — the mockup renders without it. A placeholder
-//     is never emitted where a logo or product should be.
+//     region (client may not provide a link) — the mockup renders without it.
+//     A placeholder is never emitted where a logo or product should be.
 //
 // NOTE: not compiled or run in this environment (no sharp install). Before trust:
 //   `npm i sharp qrcode && npm i -D @types/qrcode`, typecheck against the real
@@ -324,7 +324,7 @@ export class SharpCompositor implements MockupPipeline {
 
     if (r.role === "qr") {
       const content = spec.specs?.qr_content;
-      if (!content) return null; // brain field not yet emitted — skip QR region, Phase 1 ships without it
+      if (!content) return null; // optional — client may not provide a QR link
       const side = Math.min(boxW, boxH);
       const buf = await QRCode.toBuffer(content, { type: "png", width: side, margin: 1 });
       return this.center(buf, side, side, boxLeft, boxTop, boxW, boxH);

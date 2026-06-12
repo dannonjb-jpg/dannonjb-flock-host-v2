@@ -126,6 +126,7 @@ it from your intents plus payment/confirmation events.
 
 - **`collect`** - you learned client/job info.
   `{"type":"collect","fields":{"client_name":"...","business_name":"...","project_type":"personal|business|event","specs":"..."}}`
+  For products that typically feature a QR code (banners, large-format prints), also collect `qr_content`: the URL the client wants encoded — their website, wa.me link, or social handle. Ask naturally once specs are set; it is optional (some clients have no link). When collected, include it as a field: `{"type":"collect","fields":{"qr_content":"https://wa.me/15551234567"}}`.
 - **`set_track`** - client chose product type.
   `{"type":"set_track","track":"physical|digital"}`
 - **`request_mockup`** - ready to generate/regenerate.

@@ -50,8 +50,7 @@ Last verified 2026-06-12:
 - `npx tsx test/fifo-burst.test.ts`: 4/4 passed.
 
 ## Things that look wrong but are intentional
-- **QR region skips (returns null) when `qr_content` absent** — brain field deferred
-  to a later session. Phase 1 ships QR-less. See invariant #4 in sharp-compositor.ts.
+- **QR region skips (returns null) when `qr_content` absent** — correct behavior; QR link is optional (client may not have one). See invariant #4 in sharp-compositor.ts.
 - **Phase B asset gate is active in `onRequestMockup`** — logo must be present and
   above the print floor before mockup generation. This is correct; it shipped in
   `b12f53e` with the compositor. The old note "Phase A asset gate is absent" no
