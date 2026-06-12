@@ -70,28 +70,36 @@ Last verified 2026-06-12:
    - ~~Manual Zelle/OXXO payment route~~ — done (2026-06-12); `/manual/confirm` (POST) and `/manual/pending` (GET) on the same localhost webhook server; `listPendingManualPayments()` on Store; server now always starts (Stripe webhook still conditional on secrets)
 6. ~~Penn orch Telegram bot~~ (`orch-penn-telegram`) — done (2026-06-12); Penn skill `SKILL_OCLAW.md` wired in `Penn_core/skills/`; push-only notifier `oclaw-push.js` (cron */5) uses Penn's existing token (no getUpdates conflict); no new bot needed.
 
----
+## OpenClaw orch bot — built to gate, pending BotFather token
 
-## Notes for Opus — review and decide
+`/opt/openclaw-orch/` contains a fully-wired dedicated Telegram bot (separate token from Penn):
+- `penn-orch.js` — pure library; standalone runner removed; `node penn-orch.js` throws with routing instructions
+- `oclaw-bot.js` — dedicated bot entrypoint; token guard rejects missing token and Penn's token by name
+- `ecosystem.config.js` — pm2 config for `oclaw-bot` only (host and Penn excluded)
+- `oclaw-push.js` — cron send-only notifier (already running */5, no getUpdates)
 
-### N1 · pm2/systemd dual-supervision of Penn (action required)
+**All command paths tested against live DB — actual output:**
+- `/status` → `pending 1 (blocked 0) · active 0 · completed 3`
+- `/tasks` → `no active tasks`
+- `/stale` → `none stale`
+- `/reclaim` → shells to `oclaw reclaim --older-than 45`; no direct orders/payments write; tables: `tasks` in `openclaw.db` only (**classification b**)
+- event push cursor: 0→10 (404 expected with placeholder token)
 
-`pm2 list` shows `penn-gateway` (id=1) with **3,243 restarts** and status `waiting`. Root cause: the systemd unit `openclaw-penn.service` owns port 18789 (running, healthy, 16h+ uptime). pm2 starts the same process, hits `EADDRINUSE`, crashes, repeats forever.
+**To go live** (once BotFather token in hand):
+```bash
+# Write token to credentials file — not in chat, not in repo
+echo "export OCLAW_TELEGRAM_TOKEN=<token>" > /root/.openclaw/credentials/oclaw-bot-token
+chmod 600 /root/.openclaw/credentials/oclaw-bot-token
+source /root/.openclaw/credentials/oclaw-bot-token
+cd /opt/openclaw-orch && pm2 start ecosystem.config.js && pm2 save
+pm2 logs oclaw-bot --lines 20  # verify startup, no 409, no token collision error
+```
 
-**Violation:** the no-dual-supervision rule (one supervisor only). pm2 is the zombie; systemd is the authoritative owner.
+## Notes for Opus — resolved
 
-**Proposed fix:** `pm2 delete penn-gateway && pm2 save` — removes the zombie entry. Systemd continues as sole supervisor. Restart policy and logging stay in the unit file.
+### N1 · pm2 zombie — DONE (2026-06-12)
+Pre-flight confirmed: PID 328441 = systemd cgroup = port 18789 owner. pm2 was crash-looping EADDRINUSE.
+Executed: `pm2 delete penn-gateway && pm2 save`. Post-check: penn-gateway absent from pm2 list, systemd still active at 17h+, port still bound to PID 328441. One supervisor (systemd). ✓
 
-**Opus decision needed:** confirm the systemd unit is the intended supervisor, then authorize `pm2 delete penn-gateway`. Destructive (removes pm2 entry); reversible (can re-add if needed).
-
----
-
-### N2 · `penn-orch.js` standalone runner — now redundant
-
-`/opt/openclaw-orch/penn-orch.js` was written with a standalone runner (getUpdates loop + setInterval event push + command handler). The `orch-penn-telegram` task is now closed via:
-- Penn skill (`SKILL_OCLAW.md`) — handles `/oclaw-*` commands inside Penn's own getUpdates loop
-- `oclaw-push.js` cron — push-only event notifier using Penn's token
-
-`penn-orch.js`'s standalone runner is therefore **unused and should not be started** (would create a second getUpdates consumer on Penn's token). The exported functions (`queueSummary`, `activeTasks`, etc.) remain importable if ever needed.
-
-**Opus decision needed:** should `penn-orch.js` have its standalone runner section removed entirely (prevent accidental `node penn-orch.js` from fighting Penn), or just leave the existing comment warning in place?
+### N2 · penn-orch.js runner — DONE (2026-06-12)
+Runner section removed. `node penn-orch.js` now throws with explicit routing instructions. Exports intact. `node -e "Object.keys(require(...))"` confirms library surface with no getUpdates side effect. ✓
