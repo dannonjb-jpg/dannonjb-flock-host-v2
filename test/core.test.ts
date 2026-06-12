@@ -227,6 +227,17 @@ class FakeStore implements Store {
     o.follow_up_stage = stage;
     return { ...o };
   }
+  getLastRejectedAction(orderId: string): string | null {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const ev = this.events[i]!;
+      if (ev.order_id !== orderId || ev.type !== "state_change") continue;
+      try {
+        const p = ev.payload ? (JSON.parse(ev.payload) as { rejected_action?: { type?: string } }) : null;
+        if (p?.rejected_action?.type) return p.rejected_action.type;
+      } catch { /* skip malformed */ }
+    }
+    return null;
+  }
   close() {}
 }
 
@@ -241,6 +252,15 @@ class FakeProvider implements PaymentProvider {
   }
 }
 const fakeMockups: MockupPipeline = { async generate(): Promise<MockupUrls> { return { A: "a.png", B: "b.png" }; } };
+const fakeAssetStore = {
+  pendingAssets: () => [],
+  resolveLogo: () => null,
+  resolveAsset: () => null,
+  writeAsset: async () => "fake-asset-id",
+  confirmAssetRole: () => {},
+  resolveAssetMeta: () => null,
+  resolvePendingByRef: () => null,
+} as unknown as import("../src/store/asset-store.js").AssetStore;
 const fakeSupplier: SupplierQueue = { async queueRevision() {} };
 const fakeDelivery: Delivery = { async deliverFinal() { return { url: "final.pdf" }; } };
 const fakeNotifier: Notifier = { async postToPenn() {} };
@@ -398,7 +418,7 @@ test("host lifecycle: read receipt, reply sent, msg_sent linked to inbound", asy
   const host = new Host({
     store, brain, applier: app, payments, channel, cadence: zeroCadence,
     notifier: fakeNotifier, clock, idGen: new SeqId(), sleep: noSleep,
-    systemPrompt: "",
+    systemPrompt: "", assetStore: fakeAssetStore,
   });
   host.attach();
   await handler!({ jid: "newclient@wa", text: "hi" });
