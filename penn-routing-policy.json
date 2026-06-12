@@ -1,0 +1,81 @@
+{
+  "_comment": "Penn build-mode model routing. Cheap-by-default (Haiku); a task class or a runtime signal forces smart (Sonnet). This is the SOURCE OF TRUTH read by penn-router.ts. It is only LAW where something reads it and refuses — see _enforcement. tiers values are OpenClaw /model TOKENS ('sonnet' | 'haiku'), NOT API model strings — unlike Flock's routing-policy.json. Relaxing a class is a money-path decision: review before merging.",
+
+  "tiers": { "cheap": "haiku", "smart": "sonnet" },
+  "defaultTier": "cheap",
+
+  "taskClasses": {
+    "render": {
+      "tier": "cheap",
+      "rationale": "Deterministic Sharp compositing; capability proven in the spike. Risk is implementation bugs, not discovery. Gate with proof, not compute.",
+      "files": [
+        "src/integrations/sharp-compositor.ts",
+        "src/mockups/**"
+      ],
+      "proofGate": [
+        "output dimensions >= PRINT_FLOOR_PX (1500)",
+        "alpha preserved on logo composite",
+        "DPI / print-scale math correct",
+        "coordinate placement correct"
+      ]
+    },
+    "host_validation": {
+      "tier": "smart",
+      "stickFromFirstToken": true,
+      "rationale": "Order advancement, money, and state. A careless edit stalls or mis-advances an order SILENTLY. Same family as the payment path. Start smart; do not let Haiku attempt-then-break.",
+      "files": [
+        "src/brain/action-applier.ts",
+        "src/payments/**",
+        "src/order-store/**",
+        "src/scheduler.ts"
+      ],
+      "hotspots": [
+        "action-applier.ts case 'request_mockup'",
+        "transition()",
+        "onPaymentConfirmed / confirmInTransaction / markPaymentStatusIfPending",
+        "FORFEITABLE / forfeit logic"
+      ],
+      "reviewBeforeLive": true
+    }
+  },
+
+  "runtimeTriggers": {
+    "failure_rescue": {
+      "tier": "smart",
+      "n": 3,
+      "when": "same step fails N times | tests still red after K attempts | edit reverted | command error repeats",
+      "prompt": "Escalation. Re-check the last step against LIVE state before continuing. The reasoning carried in this thread is what drifted — question it, do not assume it is correct. Audit before acting.",
+      "note": "The in-thread /model switch carries context. Here that is a LIABILITY, not an asset: the carried reasoning is the thing that went off course. The prompt forces a re-examination instead of a continuation."
+    },
+    "destructive_command": {
+      "tier": "smart",
+      "action": "escalate BEFORE executing, not after",
+      "patterns": ["rm ", "rm -", "git push", "systemctl restart", "systemctl stop", "migrate", "DROP TABLE", "ALTER TABLE", "stripe live", "live mode"]
+    },
+    "self_request": {
+      "tier": "smart",
+      "note": "Penn asking to escalate is honored — cheap to do. But it is ONE input, not the gate: a drifting model does not know it is drifting, which is why the file-class and failure-loop triggers exist above it."
+    }
+  },
+
+  "stickiness": {
+    "enabled": true,
+    "latchTier": "smart",
+    "resetAt": "next clean task boundary",
+    "note": "render is a HARD cheap floor that breaks the latch on purpose — crossing from gate-wiring into compositor rendering is a clean boundary, and the savings live there."
+  },
+
+  "coupling": {
+    "compositor_gate": {
+      "rule": "A change to action-applier.ts case 'request_mockup' and a change to sharp-compositor.ts MUST land in the same commit. Never split.",
+      "alsoInThisChange": "Resolve or formally dismiss the 4->2 variant:'both' bug (emits A,A_alt,B,B_alt; should emit A,B). Sonnet decides live-or-moot in this same pass.",
+      "enforcedBy": "scripts/precommit-coupling.sh (git pre-commit hook) — independent of the harness, works now."
+    }
+  },
+
+  "_enforcement": {
+    "file_class_tier": "STRONGEST but CONDITIONAL: a harness pre-tool-use hook reads this file; if a write targets a host_validation glob while the session tier is cheap, it BLOCKS or forces `/model sonnet`. Requires OpenClaw to support a pre-tool hook — confirm. Without it, this layer degrades to 'Penn reads the policy and is told to obey', which is the drift you are trying to kill.",
+    "coupling": "git pre-commit hook (scripts/precommit-coupling.sh). Real law, no harness dependency. Only fires where commits happen with the hook installed — if you SFTP files to the droplet without committing there, it does NOT fire.",
+    "review_before_live": "deploy guard: a host_validation change must not reach `systemctl restart` of the live host without a review flag. Implement at the deploy script; mechanics depend on how you push to the box."
+  }
+}

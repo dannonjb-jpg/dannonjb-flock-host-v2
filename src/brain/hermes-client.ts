@@ -2,7 +2,8 @@
 // Brain port + [ctx] header builder (§5) + concrete Anthropic client.
 //
 // AnthropicClient is the live implementation: Anthropic Messages API directly,
-// SOUL contract as system prompt (loaded once at boot), [ctx] appended per-turn,
+// SOUL contract as system prompt (loaded once at boot, cached via cache_control),
+// [ctx] prepended to each user message (volatile — must not be inside cached prefix),
 // conversation history reconstructed from the events table so the brain remembers
 // the thread across restarts.
 //
@@ -21,7 +22,7 @@ export interface BrainRequest {
   sessionId: string;
   message: string;
   model: string;          // router override — passed as `model` in the API body
-  contextHeader: string;  // the [ctx] line, appended to the system prompt each turn
+  contextHeader: string;  // the [ctx] line, prepended to the user message each turn
   history: ConversationTurn[];  // recent turns, oldest-first, trimmed by the host
   systemPrompt: string;   // SOUL contract text, loaded at boot
 }
@@ -37,8 +38,15 @@ interface AnthropicMessage {
   type: string;
   text?: string;
 }
+interface AnthropicUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
 interface AnthropicResponse {
   content: AnthropicMessage[];
+  usage?: AnthropicUsage;
 }
 
 export class AnthropicClient implements Brain {
@@ -48,16 +56,22 @@ export class AnthropicClient implements Brain {
   ) {}
 
   async ask(req: BrainRequest): Promise<string> {
-    // [ctx] goes at the bottom of the system prompt so it's the last thing the brain
-    // reads before producing a reply — matches the SOUL contract's "every turn begins
-    // with [ctx]" intent as closely as the system-prompt position allows.
+    // Static SOUL+pricing text gets a cache breakpoint so Anthropic can cache it
+    // across turns. The volatile [ctx] line travels with the user message instead —
+    // any byte change in the cached prefix would invalidate it.
     const system = req.systemPrompt
-      ? `${req.systemPrompt}\n\n${req.contextHeader}`
-      : req.contextHeader;
+      ? [{ type: "text" as const, text: req.systemPrompt, cache_control: { type: "ephemeral" as const } }]
+      : undefined;
+
+    // [ctx] at the top of the user content satisfies the SOUL contract's
+    // "every turn begins with [ctx]" rule.
+    const userContent = req.contextHeader
+      ? `${req.contextHeader}\n\n${req.message}`
+      : req.message;
 
     const messages: { role: "user" | "assistant"; content: string }[] = [
       ...req.history,
-      { role: "user", content: req.message },
+      { role: "user", content: userContent },
     ];
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -70,7 +84,7 @@ export class AnthropicClient implements Brain {
       body: JSON.stringify({
         model: req.model,
         max_tokens: this.maxTokens,
-        system,
+        ...(system && { system }),
         messages,
       }),
     });
@@ -79,6 +93,12 @@ export class AnthropicClient implements Brain {
       throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
     }
     const data = (await res.json()) as AnthropicResponse;
+    if (data.usage) {
+      const u = data.usage;
+      console.log(`[brain] tokens in=${u.input_tokens} out=${u.output_tokens}` +
+        (u.cache_creation_input_tokens ? ` cache_write=${u.cache_creation_input_tokens}` : "") +
+        (u.cache_read_input_tokens ? ` cache_read=${u.cache_read_input_tokens}` : ""));
+    }
     return data.content.find((b) => b.type === "text")?.text ?? "";
   }
 }
