@@ -95,4 +95,4 @@ pm2 logs oclaw-bot --lines 20
 
 ## Remaining work
 
-- **`flock-qr-field`** (pending, priority 90) — QR content brain field; Phase 2, deferred. `qr_content` absent → compositor returns null (intentional, see `sharp-compositor.ts` invariant #4).
+- **`flock-qr-field`** (pending, priority 90 — scale: lower number = sooner; 90 = lowest urgency, do last) — QR content brain field; Phase 2, deliberately deferred. Dependency chain when picked up: brain emits `qr_content` → compositor invariant #4 stops returning null → QR renders from `wa.me` link. Nothing acts on it until the brain field lands. `qr_content` absent → compositor returns null is correct behavior until then (see `sharp-compositor.ts` invariant #4).
