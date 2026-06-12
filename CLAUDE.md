@@ -18,17 +18,20 @@ validating brain output. This is §4 of the host spec; every handler in
 `action-applier.ts` enforces it.
 
 ## State machine
-`intake → mockup → awaiting_decision → deposit_pending → revision → balance_pending → in_production`
-Digital track: `intake → mockup → awaiting_decision → digital_pending → revision → closed`
+Physical: `intake → mockup → awaiting_decision → deposit_pending → revision → balance_pending → in_production → received → delivered → closed`
+Digital:  `intake → mockup → awaiting_decision → digital_pending → revision → closed`
+
+Plus two cross-cutting exits from any non-terminal state: `→ cancelled` (manual),
+and `→ forfeited` from `{deposit_pending, revision, balance_pending}` (going-dark).
 
 `canTransition()` in `src/domain/state-machine.ts` is the single source of truth.
 Never hard-code state strings outside that file.
 
-## Coupling rules (enforced by git pre-commit hook)
+## Compositor swap — shipped, hook removed
 `src/integrations/sharp-compositor.ts` and `src/brain/action-applier.ts` case
-`request_mockup` **must land in the same commit**. The Phase A/B split is
-intentional — Phase A ships ungated, Phase B adds the asset gate. Do not
-"fix" this by splitting them.
+`request_mockup` were required to land together (Phase A = no gate; Phase B = gate
+wired). That commit is `b12f53e`. The pre-commit tripwire has been removed — both
+files may now change independently.
 
 ## Deploy guard
 Use `./scripts/deploy.sh` instead of `systemctl restart` directly.
@@ -38,17 +41,22 @@ Changes to `action-applier.ts`, `src/payments/`, `src/store/`, or
 ## Configured ≠ verified
 **Run the test suite and show actual output before claiming something is green.**
 ```
-npm test                          # core invariants (17/18; one pre-existing stub failure)
-npx tsx test/fifo-burst.test.ts   # FIFO burst serialization (4/4)
+npm test                          # core invariants
+npx tsx test/fifo-burst.test.ts   # FIFO burst serialization
 ```
-The host lifecycle test (`getLastRejectedAction`) is a pre-existing stub gap —
-not introduced by recent changes.
+Last verified 2026-06-12:
+- `npm test`: 17/18 passed. One pre-existing stub failure: "host lifecycle: read receipt,
+  reply sent, msg_sent linked to inbound" — `store.getLastRejectedAction is not a function`.
+  This stub gap predates all recent work; do not count it as a regression.
+- `npx tsx test/fifo-burst.test.ts`: 4/4 passed.
 
 ## Things that look wrong but are intentional
 - **QR region skips (returns null) when `qr_content` absent** — brain field deferred
   to a later session. Phase 1 ships QR-less. See invariant #4 in sharp-compositor.ts.
-- **Phase A asset gate is absent** — correct. Gate lands with Phase B (compositor swap).
-  The compositor and gate are a coupled atomic change by design.
+- **Phase B asset gate is active in `onRequestMockup`** — logo must be present and
+  above the print floor before mockup generation. This is correct; it shipped in
+  `b12f53e` with the compositor. The old note "Phase A asset gate is absent" no
+  longer applies; pulling the gate out would be a bug.
 - **`src/order-store/` and `src/scheduler.ts` don't exist** — policy names; actual
   paths are `src/store/` and `src/ops/scheduler.ts`.
 
@@ -57,4 +65,4 @@ not introduced by recent changes.
 2. ~~4→2 mockup bug~~ — moot; SharpCompositor generates exactly A+B for variant='both'
 3. ~~Compositor swap + Phase B gate~~ — done (`b12f53e`); SharpCompositor wired in `src/index.ts`, Phase B gate in `action-applier.ts` onRequestMockup; pre-commit tripwire removed
 4. Loose threads: manual Zelle/OXXO route, media-send logging gap, intake follow-through
-5. **Stripe webhook signing secret was pasted in chat — rotate it before next prod deploy**
+5. **Stripe webhook signing secret was pasted in chat — ROTATE NOW before any further prod traffic.**
