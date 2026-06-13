@@ -629,6 +629,61 @@ test("Blocker 1: failed charge does not advance state and stays recoverable", as
   assert.equal(dep.length, 1, "exactly one deposit row (key reused, no double-charge)");
 });
 
+// ── T2: JID guard behavioural verification ──────────────────────────────────
+
+function makeHostForJidTest(store: FakeStore, clock: SeqClock) {
+  const payments = new PaymentOps(store, new FakeProvider(), usdOnlyFx, clock);
+  const app = applier(store, payments);
+  let handler: ((m: InboundMessage) => Promise<void>) | null = null;
+  const channel: WhatsAppChannel = {
+    onInbound: (h) => (handler = h),
+    readMessages: async () => {},
+    setPresence: async () => {},
+    sendMessage: async () => {},
+    sendMedia: async () => {},
+    start: async () => {},
+    stop: async () => {},
+  };
+  const brain = { async ask() { return "should not be reached"; } };
+  const host = new Host({
+    store, brain, applier: app, payments, channel, cadence: zeroCadence,
+    notifier: fakeNotifier, clock, idGen: new SeqId(), sleep: noSleep,
+    systemPrompt: "", assetStore: fakeAssetStore,
+    operatorJids: ["136820914389016@lid"],
+  });
+  host.attach();
+  return () => handler!;
+}
+
+test("T2(i): group JID (@g.us) must be blocked — no order, no events", async () => {
+  const clock = new SeqClock();
+  const store = new FakeStore(clock, new SeqId());
+  const getHandler = makeHostForJidTest(store, clock);
+  await getHandler()({ jid: "120363000000000001@g.us", text: "hi group" });
+  assert.equal(store.orders.size, 0, "no order must be created for a group JID");
+  assert.equal(store.events.length, 0, "no events must be written for a group JID");
+});
+
+test("T2(ii): status@broadcast must be blocked — no order, no events", async () => {
+  const clock = new SeqClock();
+  const store = new FakeStore(clock, new SeqId());
+  const getHandler = makeHostForJidTest(store, clock);
+  await getHandler()({ jid: "status@broadcast", text: "broadcast msg" });
+  assert.equal(store.orders.size, 0, "no order must be created for status@broadcast");
+  assert.equal(store.events.length, 0, "no events must be written for status@broadcast");
+});
+
+test("T2(iii): operator JID must be blocked — no order, no events", async () => {
+  const clock = new SeqClock();
+  const store = new FakeStore(clock, new SeqId());
+  const getHandler = makeHostForJidTest(store, clock);
+  await getHandler()({ jid: "136820914389016@lid", text: "internal message" });
+  assert.equal(store.orders.size, 0, "no order must be created for an operator JID");
+  assert.equal(store.events.length, 0, "no events must be written for an operator JID");
+});
+
+// ── run ───────────────────────────────────────────────────────────────────
+
 (async () => {
   for (const [name, fn] of tests) {
     try {

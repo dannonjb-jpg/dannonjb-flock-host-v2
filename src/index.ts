@@ -33,6 +33,12 @@ async function main(): Promise<void> {
   const clock = systemClock;
   const idGen = uuidGen;
 
+  if (cfg.operatorJids.length === 0) {
+    logger.error("BOOT ABORT: OPERATOR_JIDS is empty or unset. The operator guard would silently no-op, allowing Dan's WhatsApp messages to create real orders. Set OPERATOR_JIDS in /etc/flock-host-v2/env and restart.");
+    process.exit(1);
+  }
+  logger.info({ operatorJids: cfg.operatorJids }, "operator guard active");
+
   // Load SOUL contract — the brain's operating instructions.
   let systemPrompt = "";
   if (existsSync(cfg.soulContractPath)) {
