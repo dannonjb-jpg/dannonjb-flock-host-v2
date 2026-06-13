@@ -17,6 +17,7 @@ export interface Config {
   telegram?: { botToken: string; chatId: string };
   integrations: { mockupUrl?: string; supplierUrl?: string; deliveryUrl?: string };
   intervals: { schedulerMs: number; heartbeatMs: number };
+  operatorJids: string[];        // OPERATOR_JIDS — never create orders or follow up for these
 }
 
 function req(name: string): string {
@@ -56,5 +57,6 @@ export function loadConfig(): Config {
       schedulerMs: Number(process.env.SCHEDULER_MS ?? 3600_000),
       heartbeatMs: Number(process.env.HEARTBEAT_MS ?? 900_000),
     },
+    operatorJids: (process.env.OPERATOR_JIDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
   };
 }

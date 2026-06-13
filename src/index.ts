@@ -99,7 +99,8 @@ async function main(): Promise<void> {
   const host = new Host({
     store, brain, applier, payments, channel, cadence,
     notifier, clock, idGen, sleep, systemPrompt, assetStore,
-    logger,  // Pass the pino logger so Obs can use it for structured logging
+    logger,
+    operatorJids: cfg.operatorJids,
   });
 
   // §9 — settle the past BEFORE taking new messages.
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
   await channel.start();
 
   // §8 scheduler (dormancy-based follow-ups: ~hourly).
-  const scheduler = new Scheduler({ store, brain, applier, channel, cadence, notifier, clock, sleep, systemPrompt });
+  const scheduler = new Scheduler({ store, brain, applier, channel, cadence, notifier, clock, sleep, systemPrompt, operatorJids: cfg.operatorJids });
   setInterval(() => void scheduler.sweep(), cfg.intervals.schedulerMs);
 
   // Mockup watchdog (stuck-at-mockup detection: ~30s, decoupled from dormancy sweep).

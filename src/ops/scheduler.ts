@@ -51,6 +51,7 @@ export class Scheduler {
       clock: Clock;
       sleep: (ms: number) => Promise<void>;
       systemPrompt: string;
+      operatorJids?: string[];
       cfg?: ScheduleConfig;
     },
   ) {}
@@ -66,6 +67,10 @@ export class Scheduler {
     const quietSince = new Date(this.d.clock.nowMs() - cfg.stage1Ms).toISOString();
     const orders = this.d.store.findQuietOrders(quietSince);
     for (const order of orders) {
+      if (this.d.operatorJids?.includes(order.whatsapp_jid)) {
+        console.log(`[scheduler] skipping operator JID: ${order.whatsapp_jid}`);
+        continue;
+      }
       try {
         await this.handle(order);
       } catch (e) {

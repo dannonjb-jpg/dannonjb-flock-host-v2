@@ -38,6 +38,7 @@ export interface HostDeps {
   assetStore: AssetStore;       // for media ingestion + quoting
   historyLimit?: number;        // conversation turns to include (default 10 exchanges)
   logger?: Logger;              // optional; if not provided, silent logger is used internally
+  operatorJids?: string[];      // JIDs that must never create orders (Dan's WA, etc.)
 }
 
 export class Host {
@@ -60,10 +61,14 @@ export class Host {
   ): Promise<void> {
     const replay = !!opts?.replayInboundEventId;
 
-    // Guard: skip non-client JIDs (status broadcasts, groups) for 1:1 flow.
-    // Groups (@g.us) and status@broadcast have no corresponding client.
+    // Guard: skip non-client JIDs. Groups, broadcasts, and configured operator JIDs
+    // must never create orders or enter the customer flow.
     if (msg.jid === 'status@broadcast' || msg.jid.endsWith('@g.us')) {
       console.log(`[host] Skipping non-client JID: ${msg.jid}`);
+      return;
+    }
+    if (this.d.operatorJids?.includes(msg.jid)) {
+      console.log(`[host] Dropping operator JID: ${msg.jid}`);
       return;
     }
 
@@ -184,7 +189,7 @@ export class Host {
     try {
       raw = await this.d.brain.ask({
         sessionId: order.hermes_session_id ?? order.order_id,
-        message: msg.text,
+        message: `<customer>\n${msg.text}\n</customer>`,
         model: decision.model,
         contextHeader: header,
         history,

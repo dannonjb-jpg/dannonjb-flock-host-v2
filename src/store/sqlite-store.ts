@@ -364,6 +364,8 @@ export class SqliteStore implements Store {
         `SELECT * FROM orders
          WHERE state NOT IN (${placeholders})
            AND (updated_at <= ? OR dormant_since IS NOT NULL)
+           AND whatsapp_jid != 'status@broadcast'
+           AND whatsapp_jid NOT LIKE '%@g.us'
          ORDER BY updated_at ASC`,
       )
       .all(...TERMINAL, quietSinceIso) as Order[];
