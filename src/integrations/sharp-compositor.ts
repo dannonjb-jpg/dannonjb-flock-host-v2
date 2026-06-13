@@ -1,9 +1,8 @@
 // src/integrations/sharp-compositor.ts
 //
-// Phase 1 deterministic Sharp compositor for the Flock mockup pipeline.
+// Sharp compositor for the Flock mockup pipeline.
 // Implements MockupPipeline.generate by compositing RESOLVED assets onto a
-// template-driven canvas. NO raster generation — every fidelity element
-// (logo, product, QR, text, colour) is placed deterministically.
+// base image produced by an injected ArtGenerator.
 //
 // ─── DESIGN INVARIANTS (do not break without escalating) ──────────────────────
 //
@@ -15,12 +14,10 @@
 //     Parsing prose here would reintroduce the exact non-determinism the Sharp
 //     pivot exists to remove, and it is untestable.
 //
-//  2. PLUGGABLE BASE. `composeBase()` is the seam where the Phase 2 generator
-//     drops in. Phase 1 returns a deterministic background; Phase 2 returns a
-//     generated buffer consuming job_spec.theme/style/color_palette. Its
-//     signature does not change, and everything downstream is agnostic to where
-//     the base came from. That is how generation lands additively, not as a
-//     rewrite.
+//  2. PLUGGABLE BASE via ArtGenerator. Phase1Base returns a deterministic solid
+//     background. GptImage1Generator calls gpt-image-1 with a 120s AbortController
+//     timeout and returns the raw art buffer. composite() is agnostic to which is
+//     active. Swap by injecting a different ArtGenerator — no other changes needed.
 //
 //  3. FIDELITY IS GATED. Assets are checked with coarseUsable. The AUTHORITATIVE
 //     gate lives in action-applier (BEFORE the state transition, per the locked
@@ -33,11 +30,6 @@
 //     below-floor resolution. QR is the exception: absent qr_content skips the
 //     region (client may not provide a link) — the mockup renders without it.
 //     A placeholder is never emitted where a logo or product should be.
-//
-// NOTE: not compiled or run in this environment (no sharp install). Before trust:
-//   `npm i sharp qrcode && npm i -D @types/qrcode`, typecheck against the real
-//   Order/MockupUrls/AssetType types, and render against one real asset on the box.
-//   Adjust the import paths below to the actual repo layout.
 
 import sharp from "sharp";
 import QRCode from "qrcode";
@@ -61,6 +53,94 @@ export type Variant = "A" | "B" | "both";
 
 export interface MockupPipeline {
   generate(order: Order, variant: Variant, brief: string): Promise<MockupUrls>;
+}
+
+// ─── ArtGenerator — the generateArt / composite split ─────────────────────────
+// generateArt produces the base image buffer from structured fields.
+// composite() (in SharpCompositor) places logo, text, QR on top.
+// Swap Phase1Base for GptImage1Generator in index.ts — nothing else changes.
+
+export interface ArtGenerator {
+  /** Returns a raw PNG buffer sized to tpl.canvasPx. */
+  generateArt(spec: JobSpec, tpl: Template, palette: Palette, brief: string): Promise<Buffer>;
+}
+
+// Phase 1: deterministic solid-colour background — zero API spend.
+export class Phase1Base implements ArtGenerator {
+  async generateArt(_spec: JobSpec, tpl: Template, palette: Palette, _brief: string): Promise<Buffer> {
+    return sharp({
+      create: {
+        width: tpl.canvasPx.w,
+        height: tpl.canvasPx.h,
+        channels: 4,
+        background: palette.bg,
+      },
+    })
+      .png()
+      .toBuffer();
+  }
+}
+
+// Phase 2: gpt-image-1 base. Requires OPENAI_API_KEY in env.
+// Spend is logged per call so it surfaces in journalctl.
+export class GptImage1Generator implements ArtGenerator {
+  constructor(private readonly apiKey: string) {}
+
+  async generateArt(spec: JobSpec, tpl: Template, _palette: Palette, brief: string): Promise<Buffer> {
+    const prompt = this.buildPrompt(spec, tpl, brief);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+
+    const body = JSON.stringify({
+      model: "gpt-image-1",
+      prompt,
+      size: `${tpl.canvasPx.w}x${tpl.canvasPx.h}` as string,
+      quality: "low",
+      n: 1,
+      response_format: "b64_json",
+    });
+
+    let res: Response;
+    try {
+      res = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      const err = await res.text().catch(() => res.statusText);
+      throw new Error(`gpt-image-1 ${res.status}: ${err}`);
+    }
+
+    const json = await res.json() as { data: Array<{ b64_json: string }> };
+    const b64 = json.data[0]?.b64_json;
+    if (!b64) throw new Error("gpt-image-1 returned no image data");
+
+    // Spend log: gpt-image-1 low quality 1024×1024 ≈ $0.011/image (adjust if pricing changes).
+    const product_type = spec.specs?.product_type ?? "unknown";
+    console.log(`[spend:gpt-image-1] product=${product_type} size=${tpl.canvasPx.w}x${tpl.canvasPx.h} quality=low ~$0.011`);
+
+    return Buffer.from(b64, "base64");
+  }
+
+  private buildPrompt(spec: JobSpec, tpl: Template, brief: string): string {
+    const parts: string[] = [];
+    if (brief) parts.push(brief);
+    if (spec.theme) parts.push(`theme: ${spec.theme}`);
+    if (spec.style) parts.push(`style: ${spec.style}`);
+    if (spec.color_palette?.length) parts.push(`colors: ${spec.color_palette.join(", ")}`);
+    parts.push(`product: ${spec.specs?.product_type ?? tpl.product_type}`);
+    parts.push("professional marketing mockup, no text overlay, clean background");
+    return parts.join(". ");
+  }
 }
 
 // The compositor does not know where artefacts are served from. The sink owns
@@ -131,7 +211,7 @@ interface TextSpec {
   anchor?: "start" | "middle" | "end";
 }
 
-interface Template {
+export interface Template {
   id: string; // "banner_standard.A"
   product_type: string;
   // Preview resolution. A separate, higher-DPI print-ready render is a later
@@ -142,7 +222,7 @@ interface Template {
   text: TextSpec[];
 }
 
-interface Palette {
+export interface Palette {
   bg: string;
   fg: string;
   accent: string;
@@ -202,7 +282,7 @@ const REGISTRY: Record<string, { A: Template; B: Template }> = {
 // These read STRUCTURED fields. They never parse `description`. Phase 2 generative
 // fields (theme/style/color_palette) are read here too so the seam is ready.
 
-interface JobSpec {
+export interface JobSpec {
   specs?: {
     description?: string; // brain input only — intentionally unused here
     product_type?: string;
@@ -235,13 +315,18 @@ function resolvePalette(spec: JobSpec, tpl: Template): Palette {
 // ─── The compositor ────────────────────────────────────────────────────────────
 
 export class SharpCompositor implements MockupPipeline {
+  private readonly artGen: ArtGenerator;
+
   constructor(
     private readonly deps: {
       assets: AssetStore;
       sink: MockupSink;
+      artGenerator?: ArtGenerator; // defaults to Phase1Base
       registry?: Record<string, { A: Template; B: Template }>;
     },
-  ) {}
+  ) {
+    this.artGen = deps.artGenerator ?? new Phase1Base();
+  }
 
   async generate(order: Order, variant: Variant, brief: string): Promise<MockupUrls> {
     // ONE composite per variant. variant 'both' => exactly A and B (2 images,
@@ -287,27 +372,10 @@ export class SharpCompositor implements MockupPipeline {
     return sharp(base).composite(layers).png().toBuffer();
   }
 
-  // ── PLUGGABLE BASE ────────────────────────────────────────────────────────
-  // Phase 1: deterministic solid background from the palette.
-  // Phase 2: replace the body with a generated buffer driven by
-  //   spec.theme / spec.style / spec.color_palette. Signature unchanged; callers
-  //   stay agnostic. THIS is the only method the generator needs to swap.
-  private async composeBase(
-    _order: Order,
-    tpl: Template,
-    palette: Palette,
-    _brief: string,
-  ): Promise<Buffer> {
-    return sharp({
-      create: {
-        width: tpl.canvasPx.w,
-        height: tpl.canvasPx.h,
-        channels: 4,
-        background: palette.bg,
-      },
-    })
-      .png()
-      .toBuffer();
+  // Delegates to the injected ArtGenerator (Phase1Base or GptImage1Generator).
+  private composeBase(order: Order, tpl: Template, palette: Palette, brief: string): Promise<Buffer> {
+    const spec = readJobSpec(order);
+    return this.artGen.generateArt(spec, tpl, palette, brief);
   }
 
   private async placeRegion(

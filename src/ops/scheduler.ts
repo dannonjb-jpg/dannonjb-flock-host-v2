@@ -50,6 +50,7 @@ export class Scheduler {
       notifier: Notifier;
       clock: Clock;
       sleep: (ms: number) => Promise<void>;
+      systemPrompt: string;
       cfg?: ScheduleConfig;
     },
   ) {}
@@ -196,7 +197,7 @@ export class Scheduler {
       model: this.followUpModel,
       contextHeader: buildContextHeader(fresh, this.d.store),
       history: this.d.store.getConversationHistory(fresh.order_id, 6),
-      systemPrompt: "",  // scheduler follow-ups don't need the full SOUL contract
+      systemPrompt: this.d.systemPrompt,
     });
 
     const parsed = parseBrainOutput(raw);

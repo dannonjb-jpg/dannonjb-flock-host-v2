@@ -70,33 +70,35 @@ Last verified 2026-06-12:
 | `confirm_asset` action + `pending_assets` in `[ctx]` | ✓ 2026-06-11 |
 | Media-send `msg_sent` logging | ✓ 2026-06-12 |
 | Manual Zelle/OXXO payment route | ✓ 2026-06-12; `/manual/confirm` + `/manual/pending` on localhost webhook server |
-| Penn orch relay (oclaw-push.js send-only notifier, cron */5) | ✓ 2026-06-12 |
+| Penn orch relay (oclaw-push.js Telegram notifier, cron */5) | ✓ built 2026-06-12; **retired** — orch no longer on Telegram |
 | pm2 zombie (`penn-gateway`, 3243 restarts) | ✓ deleted 2026-06-12; systemd is sole supervisor |
 | penn-orch.js standalone runner | ✓ retired 2026-06-12; loud guard added; exports intact |
-| SKILL_OCLAW.md (duplicate surface) | ✓ removed 2026-06-12; `oclaw-bot.js` is canonical |
+| SKILL_OCLAW.md + oclaw-bot.js Telegram approach | ✓ retired — orch command surface is CLI + Penn via WhatsApp |
+| `generateArt`/`composite` split + spend logging | ✓ 2026-06-12; `ArtGenerator` interface + `Phase1Base` + `GptImage1Generator` in `sharp-compositor.ts`; injected via `index.ts`; Phase2 activates when `OPENAI_API_KEY` is set |
 | Prompt caching | ✓ 2026-06-12; `cache_control: {type:"ephemeral"}` on system prompt block in `hermes-client.ts:129`; `[ctx]` travels with user message (not system prompt); ~4000-token SOUL+pricing prefix is well above the 2048-token cache threshold; no beta header needed (GA feature); `cache_write` / `cache_read` logged per turn |
 
-## OpenClaw orch bot — built to gate, pending BotFather token
+## Penn + orchestrator architecture
 
-Canonical command surface: `oclaw-bot.js` (dedicated token, pm2). `SKILL_OCLAW.md` removed — it was a workaround before the dedicated bot was confirmed viable; two surfaces on different tokens is duplicate implementations, not redundancy.
+**Penn** is an AI agent (Chief of Staff / ops relay) running through the OpenClaw gateway as a systemd service (`openclaw-penn.service`, port 18789). Penn is Dan's operator — it receives commands from Dan via WhatsApp, does supplier outreach via WhatsApp (+528992457770 MX), and reads `openclaw.db` read-only as a projection over task state. Penn never writes task state.
 
-`/opt/openclaw-orch/` wired and tested:
-- `penn-orch.js` — pure library; `node penn-orch.js` throws with routing instructions; `runReclaim` uses `execFile` (args array, no shell) and `RECLAIM_MIN` from env — Telegram text never reaches the arg
-- `oclaw-bot.js` — dedicated-token bot; guards reject missing/Penn's token by collision check
-- `ecosystem.config.js` — reads token from credentials file at load time (survives `pm2 resurrect`); fails loudly if file absent; pm2 config for oclaw-bot only
-- `oclaw-push.js` — cron send-only notifier (*/5, no getUpdates)
+**Orchestrator** (`/opt/openclaw-orch/`) manages build-worker task queues via SQLite + a CLI. The Telegram bot approach (`oclaw-bot.js`, `oclaw-push.js`) was built but never launched and is now retired — the orch is off Telegram entirely.
 
-`/reclaim` classification **(b)**: separate database (`openclaw.db` ≠ `flock.db`), shells to `oclaw reclaim`, zero contact with `orders`/`payments`/`escalation`. Test: ran `--older-than 1` against live DB; result was `no active tasks` (all tasks in completed/pending state, none reclaimed, zero residue).
-
-**To go live** (once BotFather token in hand):
-```bash
-# Write token as plain value — no shell export syntax, no world-readable window
-install -m600 /dev/null /root/.openclaw/credentials/oclaw-bot-token
-printf '%s' '<token>' > /root/.openclaw/credentials/oclaw-bot-token
-# ecosystem.config.js reads the file at pm2 start — no source needed
-cd /opt/openclaw-orch && pm2 start ecosystem.config.js && pm2 save
-pm2 logs oclaw-bot --lines 20   # confirm masked token logged + no 409
 ```
+/opt/openclaw-orch/openclaw.db       # task queue — single writer (CLI only, never hand-edit)
+node /opt/openclaw-orch/openclaw.js  # CLI: doctor | next | done | note | reclaim | worker-add
+```
+
+Key invariants:
+- `openclaw.db` ≠ `flock.db` — completely separate databases, zero contact with `orders`/`payments`
+- `penn-orch.js` is a library; `node penn-orch.js` throws (loud guard added 2026-06-12)
+- `oclaw reclaim --older-than 45` sweeps stale active tasks back to pending (cron `*/30`)
+- Penn reads the DB read-only; all task mutations go through the CLI inside one transaction
+
+Supervisor map (current):
+- systemd: `flock-host-v2`, `openclaw-penn`, `flock-mockup-bridge`
+- pm2: `flock-mockup-worker`
+
+**The `/root/queue/` file queue is separate** — it is the Penn+cj coordination queue for flock-host-v2 code tasks only (three-state `pending/` → `claimed/` → `done/`). It does not use openclaw.db.
 
 ## Build discipline — mandatory before touching any code
 
@@ -141,8 +143,8 @@ Before stopping, starting, or restarting anything:
 systemctl status <name>   # owned by systemd?
 pm2 list                  # owned by pm2?
 ```
-- systemd owns: `flock-host-v2`, `openclaw-penn`
-- pm2 owns: `oclaw-bot`, `flock-mockup-worker`
+- systemd owns: `flock-host-v2`, `openclaw-penn`, `flock-mockup-bridge`
+- pm2 owns: `flock-mockup-worker`
 Never add a process to both supervisors. One supervisor per process.
 
 ### 7. Deploy guard for money-path files
@@ -195,7 +197,7 @@ bash /root/queue/queue-sweep.sh --boot
 so cron scanning opus-sessions/ would false-alarm on every human pause. Boot-time is the right
 signal — an orphaned `.in-progress.opus.md` still present when the next session starts is a real
 crash; a paused session finalizes its own record on resume.
-Reclaims stale worker claims → `pending/`. Routes `.hot` orphans → `claimed-review/` + Telegram.
+Reclaims stale worker claims → `pending/`. Routes `.hot` orphans → `claimed-review/`.
 
 **Queue task YAML frontmatter (machine-readable without .json):**
 ```markdown
@@ -212,7 +214,15 @@ Penn writes queue task files as `.md` with this frontmatter — parseable, never
 
 ## Remaining work
 
-- **`flock-qr-field`** (pending, priority 90 — scale: lower number = sooner; 90 = lowest urgency, do last) — QR content brain field; Phase 2, deliberately deferred. Dependency chain when picked up: brain emits `qr_content` → compositor invariant #4 stops returning null → QR renders from `wa.me` link. Nothing acts on it until the brain field lands. `qr_content` absent → compositor returns null is correct behavior until then (see `sharp-compositor.ts` invariant #4).
+- **GPU bolt-on (Track B)** — RunPod orchestration + ComfyUI/FLUX/Wan 2.2/TTS worker image. Separate process, mirrors Python bridge (port 5051) pattern. All four sub-tasks complete in code; needs RunPod API key + image push before first live job.
+  - B1 ✓ `/root/gpu-worker/Dockerfile` — FLUX (ComfyUI), Wan 2.2 (diffusers, Apache 2.0), Chatterbox TTS (MIT). Symlink fix applied. `/root/gpu-worker/gpu.env.template` → copy to `/etc/gpu-worker/gpu.env`, chmod 600.
+  - B2 ✓ `gpu_queue.py` — RunPod pod spin-up/wait/terminate via runpod SDK.
+  - B3 ✓ `gpu_queue.py` — REST API: POST /jobs, GET /jobs/{id}, POST /jobs/{id}/cancel, GET /health.
+  - B4 ✓ `gpu_queue.py` — JOB_SPEND_CAP_USD pre-flight reject + MAX_RUNTIME_SECONDS hard kill with Telegram notify.
+  - `worker_handler.py` — handles `image` (FLUX/ComfyUI), `video` (Wan 2.2/diffusers → MP4), `tts` (Chatterbox → WAV).
+  - **To activate:** push image to registry, populate `/etc/gpu-worker/gpu.env` (RUNPOD_API_KEY + HF_TOKEN), `systemctl enable --now gpu-worker.service`.
+- **Stripe webhook secret rotation** — secret was exposed in prior chat session; must rotate in Stripe dashboard before switching to live keys. Current env uses test-mode key so no live money at risk yet.
+- **`OPENAI_API_KEY` for Phase 2 mockups** — `GptImage1Generator` is wired; just needs the key added to `/etc/flock-host-v2/env`. Phase1Base (solid bg) is the safe default until then.
 
 ## Shared work queue (Penn + cj)
 

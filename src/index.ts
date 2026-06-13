@@ -17,7 +17,7 @@ import { BaileysChannel } from "./channel/baileys-adapter.js";
 import { AssetStore } from "./store/asset-store.js";
 import { LengthScaledCadence, sleep } from "./channel/cadence.js";
 import { HttpSupplierQueue, HttpDelivery } from "./integrations/http-integrations.js";
-import { SharpCompositor, FilesystemMockupSink } from "./integrations/sharp-compositor.js";
+import { SharpCompositor, FilesystemMockupSink, GptImage1Generator } from "./integrations/sharp-compositor.js";
 import { Host } from "./host.js";
 import { reconcile } from "./ops/reconcile.js";
 import { Scheduler } from "./ops/scheduler.js";
@@ -71,11 +71,18 @@ async function main(): Promise<void> {
 
   const assetStore = new AssetStore(store.db, clock, idGen);
 
+  const artGenerator = process.env.OPENAI_API_KEY
+    ? new GptImage1Generator(process.env.OPENAI_API_KEY)
+    : undefined; // Phase1Base (solid bg) when no key — safe default
+  if (artGenerator) console.log("[boot] art generator: gpt-image-1 (Phase 2)");
+  else console.log("[boot] art generator: Phase1Base (deterministic, no API spend)");
+
   const applier = new ActionApplier({
     store,
     payments,
     mockups: new SharpCompositor({
       assets: assetStore,
+      artGenerator,
       sink: new FilesystemMockupSink(
         process.env.MOCKUP_DIR ?? '/var/www/flock-mockups',
         process.env.MOCKUP_PUBLIC_URL ?? 'https://flockprints.com/mockups',
@@ -103,7 +110,7 @@ async function main(): Promise<void> {
   await channel.start();
 
   // §8 scheduler (dormancy-based follow-ups: ~hourly).
-  const scheduler = new Scheduler({ store, brain, applier, channel, cadence, notifier, clock, sleep });
+  const scheduler = new Scheduler({ store, brain, applier, channel, cadence, notifier, clock, sleep, systemPrompt });
   setInterval(() => void scheduler.sweep(), cfg.intervals.schedulerMs);
 
   // Mockup watchdog (stuck-at-mockup detection: ~30s, decoupled from dormancy sweep).
