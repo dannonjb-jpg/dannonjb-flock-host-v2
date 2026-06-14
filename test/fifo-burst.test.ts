@@ -93,6 +93,32 @@ test("memory cleanup: queue entry removed after drain", async () => {
   assert.strictEqual(q.size(), 0, "stale queue entry left after drain — memory leak");
 });
 
+test("negative control: without JidQueue, same-JID handlers overlap", async () => {
+  // Call handlers directly (no queue chain) to prove the lock is load-bearing.
+  // h1 awaits 20ms — yields the event loop — so h2 runs concurrently with h1.
+  let h1Running = false;
+  let overlap = false;
+  const log: string[] = [];
+
+  const h1 = (async () => {
+    h1Running = true;
+    log.push("h1:start");
+    await new Promise<void>(r => setTimeout(r, 20));
+    log.push("h1:end");
+    h1Running = false;
+  })();
+
+  const h2 = (async () => {
+    overlap = h1Running;
+    log.push("h2:start");
+    log.push("h2:end");
+  })();
+
+  await Promise.all([h1, h2]);
+
+  assert.strictEqual(overlap, true, "without the lock h2 ran while h1 was in-flight — the lock is load-bearing");
+});
+
 // ── runner ─────────────────────────────────────────────────────────────────────
 
 for (const [name, fn] of tests) {
