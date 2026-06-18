@@ -48,6 +48,12 @@ const PATCHABLE: ReadonlyArray<keyof Order> = [
   "last_tier",
   "force_tier",
   "notes",
+  // Fulfillment fields (§5.12)
+  "fulfillment_method",
+  "delivery_address",
+  "shipping_tier",
+  "shipping_cents",
+  "ready_to_ship_date",
 ];
 
 export class SqliteStore implements Store {
@@ -63,6 +69,16 @@ export class SqliteStore implements Store {
     this.db.pragma("foreign_keys = ON");
     const schema = readFileSync(fileURLToPath(new URL("./order-schema.sql", import.meta.url)), "utf8");
     this.db.exec(schema);
+    // Idempotent migration for fulfillment columns (§5.12) — fails silently if already present.
+    for (const stmt of [
+      "ALTER TABLE orders ADD COLUMN fulfillment_method TEXT",
+      "ALTER TABLE orders ADD COLUMN delivery_address TEXT",
+      "ALTER TABLE orders ADD COLUMN shipping_tier TEXT",
+      "ALTER TABLE orders ADD COLUMN shipping_cents INTEGER",
+      "ALTER TABLE orders ADD COLUMN ready_to_ship_date TEXT",
+    ]) {
+      try { this.db.prepare(stmt).run(); } catch { /* column already exists */ }
+    }
   }
 
   // ── orders ────────────────────────────────────────────────────────────
@@ -299,6 +315,19 @@ export class SqliteStore implements Store {
     return this.db
       .prepare(`SELECT * FROM payments WHERE status = 'pending' AND external_ref IS NOT NULL`)
       .all() as Payment[];
+  }
+
+  findOrphanedPendingPayments(): Payment[] {
+    return this.db
+      .prepare(`SELECT * FROM payments WHERE status = 'pending' AND external_ref IS NULL AND direction = 'in'`)
+      .all() as Payment[];
+  }
+
+  getLastClientMessageTime(orderId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT MAX(created_at) AS t FROM events WHERE order_id = ? AND type = 'msg_recv'`)
+      .get(orderId) as { t: string | null };
+    return row.t ?? null;
   }
 
   listPendingManualPayments(): Payment[] {

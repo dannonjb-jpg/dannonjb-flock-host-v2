@@ -19,7 +19,7 @@ const out = join(__dirname, "..", "flock-soul-pricing.md");
 const PRODUCT_LABELS: Record<string, string> = {
   tshirt:       "T-Shirt (DTF)",
   hat:          "Hat (Embroidered)",
-  bag:          "Tote Bag",
+  tote:         "Tote Bag",
   mug:          "Ceramic Mug (11oz)",
   dtf_transfer: "DTF Transfer",
   tumbler:      "Tumbler",

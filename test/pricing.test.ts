@@ -14,6 +14,7 @@ import {
   UNIT_BASE_PRICES,
   UNIT_LADDER_OVERRIDES,
   roundToNickel,
+  normalizeProductType,
 } from "../src/pricing/pricing.js";
 import { ActionApplier, ApplyDeps } from "../src/brain/action-applier.js";
 import { Store, NewEvent, NewPayment, Quote, IdempotencyCollision } from "../src/store/store.js";
@@ -59,6 +60,8 @@ class FakeStore implements Store {
       failed_mockup_pairs: 0, digital_rounds_used: 0,
       assigned_supplier_id: null, hermes_session_id: null,
       turn_count: 0, last_tier: null, force_tier: null, notes: null,
+      fulfillment_method: null, delivery_address: null,
+      shipping_tier: null, shipping_cents: null, ready_to_ship_date: null,
     };
     this.orders.set(o.order_id, o);
     return { ...o };
@@ -628,6 +631,51 @@ test("UNIT_LADDER_OVERRIDES: custom curve overrides standard ladder", () => {
   const r2 = computePrice({ product_type: "tshirt", quantity: 10 });
   assert.ok(r2.ok);
   assert.equal(r2.priceCents, 27000, "standard ladder should be restored after override removed");
+});
+
+// ── bag→tote rename + alias (Part A) ─────────────────────────────────────────
+
+test("tote: qty 1 = $22 (standard price)", () => {
+  const r = computePrice({ product_type: "tote", quantity: 1 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 2200);
+});
+
+test("tote: standard ladder applies — qty 5 = $99 (0.90x)", () => {
+  // $22 × 0.90 × 5 = $99
+  const r = computePrice({ product_type: "tote", quantity: 5 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 9900);
+});
+
+test("tote: qty 25 = $412.50 (0.75x)", () => {
+  // $22 × 0.75 × 25 = $412.50
+  const r = computePrice({ product_type: "tote", quantity: 25 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 41250);
+});
+
+test("bag alias resolves to tote — same price as tote qty 1", () => {
+  const legacy = computePrice({ product_type: "bag", quantity: 1 });
+  const current = computePrice({ product_type: "tote", quantity: 1 });
+  assert.ok(legacy.ok && current.ok);
+  assert.equal(legacy.priceCents, current.priceCents, "bag alias must price identically to tote");
+});
+
+test("bag alias: qty 10 prices correctly (0.90x tier)", () => {
+  // $22 × 0.90 × 10 = $198
+  const r = computePrice({ product_type: "bag", quantity: 10 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 19800);
+});
+
+test("normalizeProductType: bag → tote", () => {
+  assert.equal(normalizeProductType("bag"), "tote");
+});
+
+test("normalizeProductType: unknown keys pass through unchanged", () => {
+  assert.equal(normalizeProductType("tshirt"), "tshirt");
+  assert.equal(normalizeProductType("banner_standard"), "banner_standard");
 });
 
 // ── run ───────────────────────────────────────────────────────────────────────
