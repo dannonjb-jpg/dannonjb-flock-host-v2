@@ -28,6 +28,30 @@ export const TERMINAL_STATES: ReadonlySet<OrderState> = new Set<OrderState>([
   "forfeited",
 ]);
 
+// Per-element specification for the mockup layout.
+// Properties split into content (locked — always sourced from assetStore / Order row)
+// and layout/style (overridable per revision without re-uploading assets).
+export interface ElementSpec {
+  element_id: string;            // "logo_main" | "text_headline" | "product_main" | etc.
+  type: "image" | "text" | "shape";
+  locked: boolean;               // true for all content; false for position/size/color
+
+  // Content — LOCKED. Compositor ignores these and always sources from:
+  //   image → assetStore.resolveLogo / resolveAsset
+  //   text  → order.client_name / order.business_name
+  content?: string;              // text content reference only (never rendered from here)
+  asset_id?: string;             // logo/image UUID reference only (never fetched from here)
+
+  // Layout — overridable per revision
+  position?: { x: number; y: number };       // fraction of canvas (0..1)
+  size?: { width: number; height: number };  // fraction of canvas (0..1)
+
+  // Style — overridable per revision
+  font?: { family: string; weight: number; size_points: number };
+  color?: string;    // #hex; for text elements overrides palette-derived color
+  opacity?: number;  // 0..1
+}
+
 export type Tier = "cheap" | "smart";
 export type EscalationReason = "friction" | "mockup_pairs" | "supplier" | "manual";
 
@@ -68,6 +92,9 @@ export interface Order {
   last_tier: Tier | null;
   force_tier: Tier | null;
   notes: string | null;
+  // In-memory only — elements are persisted as job_spec.elements (JSON).
+  // Populated by callers who deserialize job_spec for element-level operations.
+  elements?: ElementSpec[];
   // Fulfillment fields (§5.12) — NULL until fulfillment step is reached
   fulfillment_method: FulfillmentMethod | null;
   delivery_address: string | null;
@@ -115,9 +142,19 @@ export interface EventRow {
 
 // job_spec is freeform JSON; these are the keys the host reads/writes.
 export interface JobSpec {
-  specs?: Record<string, unknown>;
-  price_cents?: number; // client price; deposit/balance are 50% each of this
-  currency?: string; // client charge currency (default USD)
+  specs?: {
+    description?: string;
+    product_type?: string;
+    colors?: string[];
+    qr_content?: string;
+  };
+  elements?: ElementSpec[];   // per-element specs; layout overrides applied at render
+  theme?: string;
+  style?: string;
+  color_palette?: string[];
+  price_cents?: number;       // client price; deposit/balance are 50% each of this
+  currency?: string;          // client charge currency (default USD)
+  last_brief?: string;
   mockup_urls?: { A?: string; B?: string };
   final_url?: string;
   [k: string]: unknown;

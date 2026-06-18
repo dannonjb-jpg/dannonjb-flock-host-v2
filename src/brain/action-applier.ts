@@ -10,7 +10,7 @@ import { Store } from "../store/store.js";
 import { AssetStore, coarseUsable } from "../store/asset-store.js";
 import { Clock } from "../domain/ports.js";
 import { canTransition, isTerminal } from "../domain/state-machine.js";
-import { Order, JobSpec, PaymentMethod } from "../domain/types.js";
+import { Order, JobSpec, PaymentMethod, ElementSpec } from "../domain/types.js";
 import { Action } from "./actions.js";
 import {
   MockupPipeline,
@@ -21,6 +21,102 @@ import {
 import { PaymentOps, PriceUnavailable } from "../payments/payment-ops.js";
 import { computePrice, PricingInputs } from "../pricing/pricing.js";
 import { escalateForMockupFailure } from "../ops/escalation.js";
+import { buildInitialElementsForProductType } from "../integrations/sharp-compositor.js";
+
+// ── Element-addressable revision helpers ──────────────────────────────────────
+// Exported for testability. Called by onRevisionNote (digital track) and
+// onRequestMockup / onDigitalComplete (initial population).
+
+/** Returns spec.elements if already populated; otherwise builds from the product template. */
+export function ensureElementsInitialized(spec: JobSpec, productType: string): ElementSpec[] {
+  if (spec.elements && spec.elements.length > 0) return spec.elements;
+  return buildInitialElementsForProductType(productType);
+}
+
+/**
+ * MVP heuristic: parse free-text revision note for element directives.
+ * Returns updated ElementSpec objects (complete, not sparse deltas) for any
+ * elements that should be changed. Unknown patterns → empty array (no change).
+ *
+ * TODO: replace with LLM-powered directive parsing in a future increment.
+ */
+export function parseRevisionDirectives(note: string, elements: ElementSpec[]): ElementSpec[] {
+  const updates: ElementSpec[] = [];
+
+  // "make logo bigger / larger"
+  if (/\b(make|scale)\b.{0,20}\b(logo|image)\b.{0,20}\b(bigger|larger)\b/i.test(note)) {
+    const logo = elements.find(e => e.element_id === "logo_main");
+    if (logo?.size) {
+      updates.push({
+        ...logo,
+        size: {
+          width: Math.min(logo.size.width * 1.2, 1.0),
+          height: Math.min(logo.size.height * 1.2, 1.0),
+        },
+      });
+    }
+  }
+
+  // "make logo smaller"
+  if (/\b(make|scale)\b.{0,20}\b(logo|image)\b.{0,20}\b(smaller|tinier)\b/i.test(note)) {
+    const logo = elements.find(e => e.element_id === "logo_main");
+    if (logo?.size) {
+      updates.push({
+        ...logo,
+        size: {
+          width: Math.max(logo.size.width * 0.8, 0.05),
+          height: Math.max(logo.size.height * 0.8, 0.05),
+        },
+      });
+    }
+  }
+
+  // "change color to X" (for text_headline)
+  const colorMatch =
+    /change\b.{0,20}\bcolor\b.{0,20}\bto\s+(#[0-9a-fA-F]{3,6}|red|blue|green|black|white|gold|yellow|orange|purple)/i.exec(
+      note,
+    );
+  if (colorMatch) {
+    const named: Record<string, string> = {
+      red: "#ff0000", blue: "#0055cc", green: "#00aa44",
+      black: "#000000", white: "#ffffff", gold: "#c8a24b",
+      yellow: "#ffdd00", orange: "#ff7700", purple: "#7700cc",
+    };
+    const raw = colorMatch[1]!;
+    const hex = raw.startsWith("#") ? raw : (named[raw.toLowerCase()] ?? raw);
+    const text = elements.find(e => e.element_id === "text_headline");
+    if (text) updates.push({ ...text, color: hex });
+  }
+
+  // "make text bigger / larger"
+  if (/\b(make|scale)\b.{0,20}\btext\b.{0,20}\b(bigger|larger)\b/i.test(note)) {
+    const text = elements.find(e => e.element_id === "text_headline");
+    if (text?.size) {
+      updates.push({
+        ...text,
+        size: {
+          width: Math.min(text.size.width * 1.2, 0.25),
+          height: Math.min(text.size.height * 1.2, 0.25),
+        },
+      });
+    }
+  }
+
+  return updates;
+}
+
+/**
+ * Apply a list of updated ElementSpecs (from parseRevisionDirectives) onto the
+ * current elements array. Updates replace by element_id; unchanged elements preserved.
+ */
+export function applyElementDirectives(current: ElementSpec[], updates: ElementSpec[]): ElementSpec[] {
+  if (updates.length === 0) return current;
+  const map = new Map(current.map(e => [e.element_id, e]));
+  for (const upd of updates) {
+    map.set(upd.element_id, upd);
+  }
+  return [...map.values()];
+}
 
 export interface ApplyDeps {
   store: Store;
@@ -247,6 +343,11 @@ export class ActionApplier {
     const spec = readSpec(cur);
     spec.mockup_urls = { ...(spec.mockup_urls ?? {}), ...urls };
     spec.last_brief = brief;
+    // Populate initial element layout from template if not already set (Part C migration).
+    if (!spec.elements || spec.elements.length === 0) {
+      const productType = (spec.specs as { product_type?: string } | undefined)?.product_type ?? "generic";
+      spec.elements = buildInitialElementsForProductType(productType);
+    }
     this.d.store.patchOrder(cur.order_id, { job_spec: JSON.stringify(spec) });
 
     // Do NOT transition here — host.ts loop owns the transition after media sends successfully
@@ -435,12 +536,27 @@ export class ActionApplier {
       return "no revision rounds available — escalate or offer $5 block";
     }
     
-    // Consume a round and regen feeding the note.
+    // Consume a round.
     this.d.store.patchOrder(cur.order_id, { digital_rounds_used: roundsUsed + 1 });
+
+    // Element-addressable revision (Part D):
+    // 1. Ensure elements are initialized (legacy migration: populate from template if absent).
+    // 2. Parse note for element directives (MVP heuristic; TODO: LLM-powered parsing).
+    // 3. Apply directives → write updated elements to job_spec BEFORE generate, so the
+    //    compositor renders with the new layout on this revision call.
     const spec = readSpec(cur);
+    const productType = (spec.specs as { product_type?: string } | undefined)?.product_type ?? "generic";
+    const baseElements = ensureElementsInitialized(spec, productType);
+    const directives = parseRevisionDirectives(note, baseElements);
+    spec.elements = applyElementDirectives(baseElements, directives);
+    spec.last_brief = note;
+
+    // Patch elements before generate so compositor reads updated layout from job_spec.
+    const withElements = this.d.store.patchOrder(cur.order_id, { job_spec: JSON.stringify(spec) });
+
     let urls;
     try {
-      urls = await this.d.mockups.generate(cur, "both", note);
+      urls = await this.d.mockups.generate(withElements, "both", note);
     } catch (e) {
       void escalateForMockupFailure(
         this.d.store,
@@ -452,7 +568,6 @@ export class ActionApplier {
       return `mockup generation failed: ${(e as Error).message}`;
     }
     spec.mockup_urls = urls;
-    spec.last_brief = note; // Update brief for context in next turn
     this.d.store.patchOrder(cur.order_id, { job_spec: JSON.stringify(spec) });
     return null;
   }
@@ -488,6 +603,11 @@ export class ActionApplier {
     const { url } = await this.d.delivery.deliverFinal(cur);
     const spec = readSpec(cur);
     spec.final_url = url;
+    // Populate initial element layout from template if not already set (Part C migration).
+    if (!spec.elements || spec.elements.length === 0) {
+      const productType = (spec.specs as { product_type?: string } | undefined)?.product_type ?? "generic";
+      spec.elements = buildInitialElementsForProductType(productType);
+    }
     this.d.store.patchOrder(cur.order_id, { job_spec: JSON.stringify(spec) });
     this.d.store.transition(cur.order_id, "closed", { final_url: url });
     return null;

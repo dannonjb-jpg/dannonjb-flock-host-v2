@@ -13,6 +13,7 @@
     "test": "tsx test/core.test.ts",
     "test:pricing": "tsx test/pricing.test.ts",
     "test:shipping": "tsx test/shipping.test.ts",
+    "test:element-addressable": "tsx test/element-addressable.test.ts",
     "regen-pricing": "tsx scripts/regen-pricing.ts"
   },
   "dependencies": {
