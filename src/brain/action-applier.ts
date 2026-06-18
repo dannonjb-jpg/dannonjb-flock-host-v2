@@ -10,7 +10,7 @@ import { Store } from "../store/store.js";
 import { AssetStore, coarseUsable } from "../store/asset-store.js";
 import { Clock } from "../domain/ports.js";
 import { canTransition, isTerminal } from "../domain/state-machine.js";
-import { Order, JobSpec, PaymentMethod, ElementSpec } from "../domain/types.js";
+import { Order, JobSpec, PaymentMethod, ElementSpec, Client } from "../domain/types.js";
 import { Action } from "./actions.js";
 import {
   MockupPipeline,
@@ -230,7 +230,14 @@ export class ActionApplier {
         return this.onEscalate(order, action.reason, action.summary);
       case "cancel":
         return this.onCancel(order, action.reason);
+      case "retrieve_past_job":
+        return this.onRetrievePastJob(order, action.order_id);
     }
+  }
+
+  /** Returns the client profile for this JID, or null if no record exists yet. */
+  recognizeReturningClient(jid: string): Client | null {
+    return this.d.store.getClientByJid(jid);
   }
 
   private lastBrief(order: Order): string {
@@ -285,12 +292,38 @@ export class ActionApplier {
 
     patch.job_spec = JSON.stringify(spec);
     this.d.store.patchOrder(order.order_id, patch);
+
+    // Upsert client profile: name/business always update when present; address only when explicit.
+    const clientName     = "client_name"     in fields && typeof fields.client_name    === "string" ? fields.client_name    : undefined;
+    const clientBusiness = "business_name"   in fields && typeof fields.business_name  === "string" ? fields.business_name  : undefined;
+    const clientAddress  = "delivery_address" in fields && typeof fields.delivery_address === "string" ? fields.delivery_address : undefined;
+    if (clientName !== undefined || clientBusiness !== undefined || clientAddress !== undefined) {
+      this.d.store.addOrUpdateClient(order.whatsapp_jid, clientName, clientBusiness, clientAddress);
+    }
+
     return null;
   }
 
   private onSetTrack(order: Order, track: "physical" | "digital"): string | null {
     if (order.track !== "undecided") return `track already set to ${order.track}`;
     this.d.store.patchOrder(order.order_id, { track });
+    return null;
+  }
+
+  private onRetrievePastJob(order: Order, targetOrderId: string): string | null {
+    const target = this.d.store.getOrder(targetOrderId);
+    if (!target) return `order ${targetOrderId} not found`;
+    if (target.whatsapp_jid !== order.whatsapp_jid) return "order belongs to a different client";
+    const targetSpec = readSpec(target);
+    const spec = readSpec(order);
+    spec.recalled_job = {
+      order_id: targetOrderId,
+      job_spec: targetSpec,
+      selected_mockup: target.selected_mockup,
+      price_cents: typeof targetSpec.price_cents === "number" ? targetSpec.price_cents : null,
+      mockup_urls: targetSpec.mockup_urls ?? null,
+    };
+    this.d.store.patchOrder(order.order_id, { job_spec: JSON.stringify(spec) });
     return null;
   }
 

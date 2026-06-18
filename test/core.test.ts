@@ -11,6 +11,7 @@ import {
   PaymentStatus,
   EventRow,
   ClientPaymentKind,
+  Client,
 } from "../src/domain/types.js";
 import { canTransition } from "../src/domain/state-machine.js";
 import { derivePhase } from "../src/domain/phase.js";
@@ -55,6 +56,7 @@ class FakeStore implements Store {
   payments: Payment[] = [];
   events: EventRow[] = [];
   quotes: Quote[] = [];
+  clients = new Map<string, Client>();
   constructor(private clock: Clock, private ids: IdGen) {}
 
   createOrder(jid: string): Order {
@@ -112,6 +114,27 @@ class FakeStore implements Store {
     o.updated_at = this.clock.nowIso();
     void payload;
     return { ...o };
+  }
+  addOrUpdateClient(jid: string, name?: string | null, business?: string | null, delivery_address?: string | null): Client {
+    const now = this.clock.nowIso();
+    const existing = this.clients.get(jid);
+    if (existing) {
+      if (name !== undefined) existing.name = name ?? undefined;
+      if (business !== undefined) existing.business = business ?? undefined;
+      if (delivery_address !== undefined) existing.delivery_address = delivery_address ?? undefined;
+      existing.updated_at = now;
+      return { ...existing };
+    }
+    const c: Client = { client_id: this.ids.next(), whatsapp_jid: jid, name: name ?? undefined, business: business ?? undefined, delivery_address: delivery_address ?? undefined, created_at: now, updated_at: now };
+    this.clients.set(jid, c);
+    return { ...c };
+  }
+  getClientByJid(jid: string): Client | null {
+    const c = this.clients.get(jid);
+    return c ? { ...c } : null;
+  }
+  getClientOrders(jid: string): Order[] {
+    return [...this.orders.values()].filter(o => o.whatsapp_jid === jid).map(o => ({ ...o }));
   }
   insertPendingPayment(p: NewPayment): Payment {
     if (this.payments.some((x) => x.idempotency_key === p.idempotency_key)) {
@@ -172,6 +195,11 @@ class FakeStore implements Store {
   succeededDigitalBlocks(orderId: string) {
     return this.payments.filter(
       (x) => x.order_id === orderId && x.kind === "digital" && x.direction === "in" && x.status === "succeeded",
+    ).length;
+  }
+  succeededRevisionBlocks(orderId: string) {
+    return this.payments.filter(
+      (x) => x.order_id === orderId && x.kind === "revision" && x.direction === "in" && x.status === "succeeded",
     ).length;
   }
   appendEvent(e: NewEvent): EventRow {

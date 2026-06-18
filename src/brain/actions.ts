@@ -26,7 +26,8 @@ export type Action =
   | { type: "digital_complete" }
   | { type: "confirm_asset"; asset_type: ConfirmedAssetType }
   | { type: "escalate"; reason: EscalateReason; summary?: string }
-  | { type: "cancel"; reason: string };
+  | { type: "cancel"; reason: string }
+  | { type: "retrieve_past_job"; order_id: string };
 
 export interface ParsedTurn {
   /** Client-facing natural language, with the actions block stripped. */
@@ -100,6 +101,8 @@ export function coerceAction(raw: unknown): Action | null {
         : { type: "escalate", reason: raw.reason };
     case "cancel":
       return typeof raw.reason === "string" ? { type: "cancel", reason: raw.reason } : null;
+    case "retrieve_past_job":
+      return typeof raw.order_id === "string" ? { type: "retrieve_past_job", order_id: raw.order_id } : null;
     default:
       return null;
   }

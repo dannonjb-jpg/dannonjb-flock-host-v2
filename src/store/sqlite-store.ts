@@ -23,6 +23,7 @@ import {
   EventRow,
   ClientPaymentKind,
   TERMINAL_STATES,
+  Client,
 } from "../domain/types.js";
 import { assertTransition } from "../domain/state-machine.js";
 
@@ -142,6 +143,36 @@ export class SqliteStore implements Store {
     });
     tx();
     return this.getOrder(orderId)!;
+  }
+
+  // ── client profiles ────────────────────────────────────────────────────────
+  addOrUpdateClient(jid: string, name?: string | null, business?: string | null, delivery_address?: string | null): Client {
+    const existing = this.getClientByJid(jid);
+    const now = this.clock.nowIso();
+    if (existing) {
+      const cols: string[] = ["updated_at = ?"];
+      const vals: unknown[] = [now];
+      if (name !== undefined)             { cols.push("name = ?");             vals.push(name ?? null); }
+      if (business !== undefined)         { cols.push("business = ?");         vals.push(business ?? null); }
+      if (delivery_address !== undefined) { cols.push("delivery_address = ?"); vals.push(delivery_address ?? null); }
+      vals.push(existing.client_id);
+      this.db.prepare(`UPDATE clients SET ${cols.join(", ")} WHERE client_id = ?`).run(...(vals as never[]));
+    } else {
+      const id = this.idGen.next();
+      this.db.prepare(
+        `INSERT INTO clients (client_id, whatsapp_jid, name, business, delivery_address, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(id, jid, name ?? null, business ?? null, delivery_address ?? null, now, now);
+    }
+    return this.getClientByJid(jid)!;
+  }
+
+  getClientByJid(jid: string): Client | null {
+    return (this.db.prepare(`SELECT * FROM clients WHERE whatsapp_jid = ?`).get(jid) as Client) ?? null;
+  }
+
+  getClientOrders(jid: string): Order[] {
+    return this.db.prepare(`SELECT * FROM orders WHERE whatsapp_jid = ? ORDER BY created_at DESC`).all(jid) as Order[];
   }
 
   // ── payments ────────────────────────────────────────────────────────────

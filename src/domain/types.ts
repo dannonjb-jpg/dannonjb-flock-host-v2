@@ -103,6 +103,16 @@ export interface Order {
   ready_to_ship_date: string | null; // ISO8601 agreed project date; ETA clock starts here
 }
 
+export interface Client {
+  client_id: string;
+  whatsapp_jid: string;
+  name?: string;
+  business?: string;
+  delivery_address?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Payment {
   payment_id: string;
   order_id: string;
@@ -157,5 +167,12 @@ export interface JobSpec {
   last_brief?: string;
   mockup_urls?: { A?: string; B?: string };
   final_url?: string;
+  recalled_job?: {
+    order_id: string;
+    job_spec: JobSpec | null;
+    selected_mockup: "A" | "B" | null;
+    price_cents: number | null;
+    mockup_urls: { A?: string; B?: string } | null;
+  };
   [k: string]: unknown;
 }

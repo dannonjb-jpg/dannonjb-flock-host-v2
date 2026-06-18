@@ -154,3 +154,20 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_order ON events(order_id);
 CREATE INDEX IF NOT EXISTS idx_events_type  ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_inbound ON events(inbound_event_id);
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- clients: one row per WhatsApp JID. Created/updated via addOrUpdateClient
+-- whenever client_name, business_name, or delivery_address is collected.
+-- Keyed on whatsapp_jid (UNIQUE) so each client has exactly one profile row.
+-- ──────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS clients (
+  client_id        TEXT PRIMARY KEY,      -- host-generated UUID
+  whatsapp_jid     TEXT UNIQUE NOT NULL,  -- the stable key
+  name             TEXT,
+  business         TEXT,
+  delivery_address TEXT,
+  created_at       TEXT NOT NULL,         -- ISO8601
+  updated_at       TEXT NOT NULL          -- ISO8601
+);
+
+CREATE INDEX IF NOT EXISTS idx_clients_jid ON clients(whatsapp_jid);
