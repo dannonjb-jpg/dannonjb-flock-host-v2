@@ -25,6 +25,7 @@ const TRANSITIONS: Record<OrderState, readonly OrderState[]> = {
   closed: [],
   cancelled: [],
   forfeited: [],
+  shop_rejected: [],
 };
 
 // Forfeit is reachable only from these positions (going-dark rules, §8).
@@ -51,6 +52,7 @@ export function canTransition(from: OrderState, to: OrderState): boolean {
   }
   if (to === "cancelled") return !isTerminal(from);
   if (to === "forfeited") return FORFEITABLE.has(from);
+  if (to === "shop_rejected") return !isTerminal(from);
   return TRANSITIONS[from].includes(to);
 }
 

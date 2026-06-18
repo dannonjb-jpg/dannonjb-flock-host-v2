@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_cents      INTEGER,                 -- computed by computeShipping(); added to order total
   ready_to_ship_date  TEXT,                    -- ISO8601 agreed project date; ETA clock starts here
 
+  -- Content-gate fields
+  shop_rejected_reason TEXT,                   -- reason recorded when state='shop_rejected'
+
   CHECK (track IN ('undecided','physical','digital')),
   CHECK (fulfillment_method IS NULL OR fulfillment_method IN ('pickup','local_delivery','ship')),
   CHECK (shipping_tier IS NULL OR shipping_tier IN ('standard','priority','overnight')),
@@ -71,7 +74,7 @@ CREATE TABLE IF NOT EXISTS orders (
     'deposit_pending', 'digital_pending',
     'revision', 'balance_pending', 'in_production',
     'received', 'delivered', 'closed',
-    'cancelled', 'forfeited'
+    'cancelled', 'forfeited', 'shop_rejected'
   )),
   CHECK (last_tier  IS NULL OR last_tier  IN ('cheap','smart')),
   CHECK (force_tier IS NULL OR force_tier IN ('cheap','smart'))

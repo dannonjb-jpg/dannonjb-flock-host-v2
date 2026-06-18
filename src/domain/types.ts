@@ -20,12 +20,14 @@ export type OrderState =
   | "delivered"
   | "closed"
   | "cancelled"
-  | "forfeited";
+  | "forfeited"
+  | "shop_rejected";
 
 export const TERMINAL_STATES: ReadonlySet<OrderState> = new Set<OrderState>([
   "closed",
   "cancelled",
   "forfeited",
+  "shop_rejected",
 ]);
 
 export type Tier = "cheap" | "smart";
@@ -74,6 +76,8 @@ export interface Order {
   shipping_tier: ShippingTier | null;
   shipping_cents: number | null;
   ready_to_ship_date: string | null; // ISO8601 agreed project date; ETA clock starts here
+  // Content-gate fields
+  shop_rejected_reason: string | null;
 }
 
 export interface Payment {
@@ -120,5 +124,17 @@ export interface JobSpec {
   currency?: string; // client charge currency (default USD)
   mockup_urls?: { A?: string; B?: string };
   final_url?: string;
+  // IP attestation: recorded when a flagged asset is attested by the client
+  ip_attestation?: {
+    attested_at: string;          // ISO8601
+    client_confirms_rights: boolean;
+    prompt_shown: string;         // exact text shown to client before attestation
+  };
+  // Moderation flag: set by the moderation gate on each confirm_asset attempt
+  moderation_flag?: {
+    flagged: boolean;
+    reason?: string;
+    checked_at: string;           // ISO8601
+  };
   [k: string]: unknown;
 }

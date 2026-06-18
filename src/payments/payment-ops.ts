@@ -171,6 +171,51 @@ export class PaymentOps {
     return this.applyResult(payment, result);
   }
 
+  /**
+   * Issue a full refund for all collected (succeeded inbound) payments.
+   * Idempotency key: `{order_id}:refund:shop_rejected` — safe to retry.
+   * Direction is `out` (money leaving Flock back to the client).
+   */
+  async issueRefund(order: Order, method: PaymentMethod): Promise<RequestResult> {
+    const all = this.store.listPayments(order.order_id);
+    const collected = all
+      .filter((p) => p.direction === "in" && p.status === "succeeded")
+      .reduce((sum, p) => sum + p.amount_cents, 0);
+
+    if (collected === 0) {
+      throw new Error(`no collected payments to refund for order ${order.order_id}`);
+    }
+
+    const currency = all.find((p) => p.direction === "in")?.currency ?? "USD";
+    const key = `${order.order_id}:refund:shop_rejected`;
+
+    const row: NewPayment = {
+      order_id: order.order_id,
+      kind: "refund",
+      direction: "out",
+      amount_cents: collected,
+      currency,
+      fx_to_usd: this.fx.toUsd(currency),
+      method,
+      idempotency_key: key,
+    };
+
+    let payment: Payment;
+    try {
+      payment = this.store.insertPendingPayment(row);
+    } catch (e) {
+      if (e instanceof IdempotencyCollision) {
+        const existing = this.store.getPaymentByKey(key);
+        if (!existing) throw e;
+        return { payment: existing, cleared: existing.status === "succeeded" };
+      }
+      throw e;
+    }
+
+    const result = await this.charge(payment, `Shop rejection refund for ${order.order_id}`);
+    return this.applyResult(payment, result);
+  }
+
   private async charge(payment: Payment, description: string): Promise<ChargeResult> {
     return this.provider.charge({
       amountCents: payment.amount_cents,

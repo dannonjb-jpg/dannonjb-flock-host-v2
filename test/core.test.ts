@@ -83,6 +83,7 @@ class FakeStore implements Store {
       last_tier: null,
       force_tier: null,
       notes: null,
+      shop_rejected_reason: null,
     };
     this.orders.set(o.order_id, o);
     return { ...o };
@@ -93,7 +94,7 @@ class FakeStore implements Store {
   }
   findActiveOrderByJid(jid: string) {
     const list = [...this.orders.values()].filter(
-      (o) => o.whatsapp_jid === jid && !["closed", "cancelled", "forfeited"].includes(o.state),
+      (o) => o.whatsapp_jid === jid && !["closed", "cancelled", "forfeited", "shop_rejected"].includes(o.state),
     );
     return list.length ? { ...list[list.length - 1]! } : null;
   }
@@ -174,6 +175,11 @@ class FakeStore implements Store {
       (x) => x.order_id === orderId && x.kind === "digital" && x.direction === "in" && x.status === "succeeded",
     ).length;
   }
+  succeededRevisionBlocks(orderId: string) {
+    return this.payments.filter(
+      (x) => x.order_id === orderId && x.kind === "revision" && x.direction === "in" && x.status === "succeeded",
+    ).length;
+  }
   appendEvent(e: NewEvent): EventRow {
     const row: EventRow = {
       event_id: this.ids.next(),
@@ -196,6 +202,14 @@ class FakeStore implements Store {
   }
   findPendingPaymentsWithExternalRef() {
     return this.payments.filter((p) => p.status === "pending" && p.external_ref);
+  }
+  findOrphanedPendingPayments() {
+    return this.payments.filter((p) => p.status === "pending" && !p.external_ref && p.direction === "in");
+  }
+  getLastClientMessageTime(orderId: string): string | null {
+    const recvs = this.events.filter((e) => e.order_id === orderId && e.type === "msg_recv");
+    if (recvs.length === 0) return null;
+    return recvs.reduce((max, e) => (e.created_at > max ? e.created_at : max), recvs[0]!.created_at);
   }
   inboundHasReply(id: string) {
     return this.events.some((r) => r.type === "msg_sent" && r.inbound_event_id === id);
