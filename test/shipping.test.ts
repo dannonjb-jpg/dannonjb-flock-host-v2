@@ -13,6 +13,7 @@ import {
   SHIP_OVERNIGHT_CENTS,
   LOCAL_RADIUS_MILES,
   OVERSIZE_PRODUCTS,
+  SHOP_ZIP,
 } from "../src/pricing/shipping.js";
 
 // ── harness ───────────────────────────────────────────────────────────────────
@@ -114,25 +115,41 @@ test("expedite always paid: priority $19.99 at $100 subtotal", () => {
 });
 
 // ── local delivery: eligible vs ineligible ────────────────────────────────────
+// local_delivery pricing = standard-ship rule regardless of zone eligibility.
+// localEligible governs whether to offer local delivery, not what it costs.
 
-test("local_delivery: subtotal >= $50 AND localEligible = FREE", () => {
+test("local_delivery: subtotal >= $50, localEligible = FREE", () => {
   const r = computeShipping(5000, "local_delivery", "standard", true);
   assert.equal(r.shippingCents, 0);
 });
 
-test("local_delivery: subtotal >= $50 but NOT localEligible = paid ($9.99)", () => {
+test("local_delivery: subtotal >= $50, NOT localEligible = FREE (standard-ship fallback)", () => {
+  // Key fix: ineligible does NOT make it $9.99 — falls back to standard-ship free rule
   const r = computeShipping(5000, "local_delivery", "standard", false);
-  assert.equal(r.shippingCents, SHIP_STANDARD_CENTS);
+  assert.equal(r.shippingCents, 0, "ineligible local_delivery at $50+ should be FREE, same as ship/standard");
 });
 
-test("local_delivery: subtotal < $50 even if localEligible = paid ($9.99)", () => {
+test("local_delivery: subtotal < $50, localEligible = paid ($9.99)", () => {
   const r = computeShipping(4999, "local_delivery", "standard", true);
   assert.equal(r.shippingCents, SHIP_STANDARD_CENTS);
 });
 
-test("local_delivery: subtotal < $50 AND not localEligible = paid ($9.99)", () => {
+test("local_delivery: subtotal < $50, NOT localEligible = paid ($9.99)", () => {
   const r = computeShipping(2200, "local_delivery", "standard", false);
   assert.equal(r.shippingCents, SHIP_STANDARD_CENTS);
+});
+
+test("local_delivery: $50+ ineligible → $0 (the explicit boundary case)", () => {
+  // Requested explicit test: >= $50, ineligible local = $0
+  const r = computeShipping(5000, "local_delivery", "standard", false);
+  assert.equal(r.shippingCents, 0);
+});
+
+test("local_delivery: $49.99 ineligible → $9.99 (below threshold, either eligibility)", () => {
+  const eligible = computeShipping(4999, "local_delivery", "standard", true);
+  const ineligible = computeShipping(4999, "local_delivery", "standard", false);
+  assert.equal(eligible.shippingCents, SHIP_STANDARD_CENTS);
+  assert.equal(ineligible.shippingCents, SHIP_STANDARD_CENTS);
 });
 
 // ── oversize escalation ───────────────────────────────────────────────────────
@@ -229,12 +246,56 @@ test("computeShipping with digital product_type: treated as standard shippable (
   assert.equal(r.shippingCents, SHIP_STANDARD_CENTS); // 500¢ < threshold
 });
 
-// ── isLocalEligible ───────────────────────────────────────────────────────────
+// ── SHOP_ZIP default and isLocalEligible ─────────────────────────────────────
 
-test("isLocalEligible: returns false when SHOP_ZIP is not set", () => {
-  // In the test env, SHOP_ZIP is not set — so all ZIPs are ineligible.
-  const result = isLocalEligible("90210");
-  assert.equal(result, false);
+test("SHOP_ZIP defaults to 78577 (Pharr, TX)", () => {
+  assert.equal(SHOP_ZIP, "78577");
+});
+
+test("isLocalEligible: Pharr (78577) is eligible (shop home ZIP)", () => {
+  assert.ok(isLocalEligible("78577"));
+});
+
+test("isLocalEligible: McAllen core ZIPs are eligible", () => {
+  for (const z of ["78501", "78502", "78503", "78504", "78505"]) {
+    assert.ok(isLocalEligible(z), `${z} (McAllen) should be in the local zone`);
+  }
+});
+
+test("isLocalEligible: Edinburg ZIPs are eligible", () => {
+  for (const z of ["78539", "78541", "78542"]) {
+    assert.ok(isLocalEligible(z), `${z} (Edinburg) should be in the local zone`);
+  }
+});
+
+test("isLocalEligible: Mission ZIPs are eligible", () => {
+  for (const z of ["78572", "78573", "78574"]) {
+    assert.ok(isLocalEligible(z), `${z} (Mission) should be in the local zone`);
+  }
+});
+
+test("isLocalEligible: other RGV core cities are eligible", () => {
+  const cases: [string, string][] = [
+    ["78516", "Alamo"],
+    ["78537", "Donna"],
+    ["78557", "Hidalgo"],
+    ["78570", "Mercedes"],
+    ["78589", "San Juan"],
+    ["78596", "Weslaco"],
+  ];
+  for (const [z, city] of cases) {
+    assert.ok(isLocalEligible(z), `${z} (${city}) should be in the local zone`);
+  }
+});
+
+test("isLocalEligible: ZIP outside RGV is not eligible", () => {
+  assert.ok(!isLocalEligible("78701")); // Austin
+  assert.ok(!isLocalEligible("90210")); // Beverly Hills
+  assert.ok(!isLocalEligible("10001")); // New York
+});
+
+test("isLocalEligible: Laredo ZIP is not eligible (~150mi away)", () => {
+  assert.ok(!isLocalEligible("78040")); // Laredo
 });
 
 // ── run ───────────────────────────────────────────────────────────────────────

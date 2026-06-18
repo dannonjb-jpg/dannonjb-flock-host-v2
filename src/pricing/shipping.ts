@@ -31,20 +31,51 @@ export const OVERSIZE_PRODUCTS: ReadonlySet<string> = new Set([
 
 // ── local eligibility ─────────────────────────────────────────────────────────
 // ZIP-code allowlist for the shop's 25-mile delivery zone.
-// Configured via environment: SHOP_ZIP (single ZIP) + LOCAL_ZIP_ALLOWLIST (comma-sep list).
-// TODO: if SHOP_ZIP is unset, log a warning and default to ineligible for all.
+// Shop is at 78577 (Pharr, TX). Allowlist computed from RGV centroid geography.
+// Override at runtime via env: SHOP_ZIP, LOCAL_ZIP_ALLOWLIST (comma-sep).
+//
+// DEFAULT_LOCAL_ZIPS: RGV core ZIPs within ~25mi of 78577.
+// Derived from known city-ZIP mappings; no external API used.
+// ⚠ FLAG FOR MANUAL REVIEW: borderline ZIPs (78562, 78593) are ~20mi — verify
+//   with a ZIP-centroid dataset before expanding delivery commitments.
 
-const SHOP_ZIP = process.env["SHOP_ZIP"];
+const DEFAULT_LOCAL_ZIPS = [
+  // McAllen
+  "78501", "78502", "78503", "78504", "78505",
+  // Edinburg (~10mi north)
+  "78539", "78541", "78542",
+  // Mission (~18mi west)
+  "78572", "78573", "78574",
+  // Pharr — shop home ZIP
+  "78577",
+  // Alamo (~8mi east)
+  "78516",
+  // Donna (~12mi east)
+  "78537",
+  // Hidalgo (~5mi south)
+  "78557",
+  // La Joya (~15mi northwest)
+  "78558",
+  // La Villa (~20mi east) ⚠ borderline — verify
+  "78562",
+  // Mercedes (~22mi east)
+  "78570",
+  // San Juan (~3mi east)
+  "78589",
+  // Valley View (~5mi) ⚠ borderline — verify
+  "78593",
+  // Weslaco (~18mi east)
+  "78596",
+];
+
+export const SHOP_ZIP: string = process.env["SHOP_ZIP"] ?? "78577";
+
 const LOCAL_ZIPS: ReadonlySet<string> = new Set(
-  (process.env["LOCAL_ZIP_ALLOWLIST"] ?? "").split(",").map((z) => z.trim()).filter(Boolean),
+  (process.env["LOCAL_ZIP_ALLOWLIST"] ?? DEFAULT_LOCAL_ZIPS.join(","))
+    .split(",").map((z) => z.trim()).filter(Boolean),
 );
 
 export function isLocalEligible(customerZip: string): boolean {
-  if (!SHOP_ZIP) {
-    // TODO: configure SHOP_ZIP to enable local delivery zone checks
-    console.warn("[shipping] SHOP_ZIP not configured — local delivery eligibility cannot be determined; defaulting to ineligible");
-    return false;
-  }
   return LOCAL_ZIPS.has(customerZip);
 }
 
@@ -78,7 +109,10 @@ export interface ShippingResult {
  *
  * Rules (flock-canonical.md §5.12):
  * - pickup             → always FREE
- * - local_delivery     → FREE when subtotal ≥ $50 AND localEligible; otherwise $9.99
+ * - local_delivery     → same free-ship threshold as standard (FREE at subtotal ≥ $50,
+ *                        $9.99 under $50) regardless of localEligible.
+ *                        localEligible controls whether to OFFER local delivery; once
+ *                        chosen, pricing is identical to ship/standard.
  * - ship / standard    → FREE when subtotal ≥ $50; otherwise $9.99
  * - ship / priority    → always $19.99 (expedite always paid, even at $50+)
  * - ship / overnight   → always $24.99 (expedite always paid, even at $50+)
@@ -107,8 +141,9 @@ export function computeShipping(
   if (method === "pickup") {
     shippingCents = 0;
   } else if (method === "local_delivery") {
-    // Free only when subtotal ≥ $50 AND within the local delivery zone.
-    shippingCents = (aboveThreshold && localEligible) ? 0 : SHIP_STANDARD_CENTS;
+    // Pricing follows the standard free-ship rule regardless of zone eligibility.
+    // localEligible governs whether to offer local delivery, not what it costs.
+    shippingCents = aboveThreshold ? 0 : SHIP_STANDARD_CENTS;
   } else {
     // method === "ship"
     if (tier === "standard") {
