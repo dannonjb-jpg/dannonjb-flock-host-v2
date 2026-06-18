@@ -87,6 +87,8 @@ export interface Store {
   hasHeldMoney(orderId: string): boolean;
   /** Count of succeeded inbound `digital` payments = current block index. */
   succeededDigitalBlocks(orderId: string): number;
+  /** Count of succeeded inbound `revision` payments = current block index. */
+  succeededRevisionBlocks(orderId: string): number;
 
   // ── events (append-only) ─────────────────────────────────────────────────
   appendEvent(e: NewEvent): EventRow;
@@ -96,6 +98,14 @@ export interface Store {
   findUnansweredInbound(): EventRow[];
   /** §9: payments stuck `pending` that already have an external_ref. */
   findPendingPaymentsWithExternalRef(): Payment[];
+  /** §9: payments stuck `pending` with NO external_ref — crash remnants that need alerting. */
+  findOrphanedPendingPayments(): Payment[];
+  /**
+   * Timestamp of the most recent msg_recv event for an order (client's last message).
+   * Used by the dormancy clock to anchor elapsed time to real client silence, not host writes.
+   * Returns null if no msg_recv exists; caller should fall back to order.created_at.
+   */
+  getLastClientMessageTime(orderId: string): string | null;
   /** Manual payment confirmation: pending inbound payments not via Stripe (Zelle/OXXO/cash). */
   listPendingManualPayments(): Payment[];
   /** True if this inbound has already been answered (a msg_sent links to it). */

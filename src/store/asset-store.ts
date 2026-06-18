@@ -378,6 +378,25 @@ export class AssetStore {
     return this.resolveAsset(jid, 'logo', version);
   }
 
+  /** Fetch a specific asset (any state) by its UUID — used by the moderation gate. */
+  resolveAssetById(assetId: string): ResolvedAsset | null {
+    try {
+      const META_COLS = `a.asset_id, a.jid, a.bytes_hash, a.asset_type, a.role, a.role_source,
+        a.resolution_hint, a.width_px, a.height_px, a.is_vector, a.version, a.is_current,
+        a.source_message, a.created_at`;
+      const row = this.db.prepare(`
+        SELECT ${META_COLS}, b.content AS content, b.bytes_size AS bytes_size
+        FROM assets a JOIN asset_bytes b ON b.bytes_hash = a.bytes_hash
+        WHERE a.asset_id = ?
+      `).get(assetId);
+      if (!row) return null;
+      return hydrate(row);
+    } catch (err) {
+      console.error(`[asset-store] resolveAssetById failed: ${err}`);
+      return null;
+    }
+  }
+
   /**
    * Intake's pending assets: those waiting on role confirmation.
    * Ordered by created_at ASC (oldest first) as tiebreak, then asset_id ASC for stability.

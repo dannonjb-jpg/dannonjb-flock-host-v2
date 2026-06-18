@@ -54,6 +54,8 @@ const PATCHABLE: ReadonlyArray<keyof Order> = [
   "shipping_tier",
   "shipping_cents",
   "ready_to_ship_date",
+  // content-gate
+  "shop_rejected_reason",
 ];
 
 export class SqliteStore implements Store {
@@ -76,6 +78,8 @@ export class SqliteStore implements Store {
       "ALTER TABLE orders ADD COLUMN shipping_tier TEXT",
       "ALTER TABLE orders ADD COLUMN shipping_cents INTEGER",
       "ALTER TABLE orders ADD COLUMN ready_to_ship_date TEXT",
+      // content-gate columns
+      "ALTER TABLE orders ADD COLUMN shop_rejected_reason TEXT",
     ]) {
       try { this.db.prepare(stmt).run(); } catch { /* column already exists */ }
     }

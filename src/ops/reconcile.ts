@@ -16,6 +16,7 @@ export interface ReconcileResult {
   replayedInbound: number;
   settledPayments: number;
   failedPayments: number;
+  orphanedPendingPayments: number;
 }
 
 export async function reconcile(deps: {
@@ -24,7 +25,7 @@ export async function reconcile(deps: {
   provider: PaymentProvider;
 }): Promise<ReconcileResult> {
   const { store, host, provider } = deps;
-  const result: ReconcileResult = { replayedInbound: 0, settledPayments: 0, failedPayments: 0 };
+  const result: ReconcileResult = { replayedInbound: 0, settledPayments: 0, failedPayments: 0, orphanedPendingPayments: 0 };
 
   // 1. Replay unanswered inbound.
   for (const ev of store.findUnansweredInbound()) {
@@ -59,6 +60,15 @@ export async function reconcile(deps: {
       }
       // pending: leave as-is; a later sweep or webhook resolves it.
     }
+  }
+
+  // 3. Alert on orphaned pending payments (pending + no external_ref = crash remnant;
+  //    a session was never created, so no webhook will ever arrive to resolve these).
+  for (const p of store.findOrphanedPendingPayments()) {
+    console.warn(
+      `[reconcile] orphaned pending payment payment_id=${p.payment_id} order_id=${p.order_id} kind=${p.kind} — no external_ref; may need manual resolution`,
+    );
+    result.orphanedPendingPayments++;
   }
 
   return result;

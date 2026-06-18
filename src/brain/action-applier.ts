@@ -8,6 +8,7 @@
 
 import { Store } from "../store/store.js";
 import { AssetStore, coarseUsable } from "../store/asset-store.js";
+import { moderateAsset } from "../moderation/moderate.js";
 import { Clock } from "../domain/ports.js";
 import { canTransition, isTerminal } from "../domain/state-machine.js";
 import { Order, JobSpec, PaymentMethod, ElementSpec } from "../domain/types.js";
@@ -252,6 +253,8 @@ export class ActionApplier {
       if (k === "client_name" && typeof v === "string") patch.client_name = v;
       else if (k === "business_name" && typeof v === "string") patch.business_name = v;
       else if (k === "project_type" && typeof v === "string") patch.project_type = v;
+      else if (k === "ip_attestation" && typeof v === "object" && v !== null)
+        spec.ip_attestation = v as JobSpec["ip_attestation"];
       else (spec.specs as Record<string, unknown>)[k] = v;
     }
 
@@ -294,10 +297,47 @@ export class ActionApplier {
     return null;
   }
 
-  private onConfirmAsset(order: Order, assetType: "logo" | "product" | "reference"): string | null {
+  private async onConfirmAsset(
+    order: Order,
+    assetType: "logo" | "product" | "reference",
+  ): Promise<string | null> {
     const pending = this.d.assetStore.pendingAssets(order.whatsapp_jid);
     if (pending.length === 0) return "no pending asset to confirm";
     const focus = pending[0]!;
+
+    // Moderation gate: scan bytes for policy violations before confirming.
+    const resolved = this.d.assetStore.resolveAssetById(focus.asset_id);
+    if (resolved) {
+      const modResult = await moderateAsset({ bytes: resolved.content, mimeType: "image/jpeg" });
+      // Record the scan result in job_spec regardless of outcome.
+      const spec = readSpec(order);
+      spec.moderation_flag = {
+        flagged: !modResult.ok,
+        reason: modResult.reason,
+        checked_at: new Date().toISOString(),
+      };
+      this.d.store.patchOrder(order.order_id, { job_spec: JSON.stringify(spec) });
+
+      if (!modResult.ok) {
+        const specFresh = readSpec(this.d.store.getOrder(order.order_id) ?? order);
+        const att = specFresh.ip_attestation;
+        if (att?.client_confirms_rights === true) {
+          // Attested: proceed but send calibration alert so Dan can review.
+          const productHint = (specFresh.specs as Record<string, unknown> | undefined)?.product_type
+            ?? order.project_type
+            ?? "unknown";
+          void this.d.notifier
+            .postToPenn(
+              `[flagged-and-attested] ${order.order_id} ${productHint}: ${modResult.reason}`,
+            )
+            .catch(() => {/* non-blocking */});
+        } else {
+          // Not attested: reject so the brain can surface the issue to the client.
+          return `content moderation flag: ${modResult.reason}`;
+        }
+      }
+    }
+
     const role = assetType === "reference" ? "reference" : "fidelity";
     const promote = role === "fidelity";
     this.d.assetStore.confirmAssetRole(focus.asset_id, assetType, role, promote);

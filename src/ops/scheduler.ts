@@ -152,10 +152,12 @@ export class Scheduler {
 
   private async handle(order: Order): Promise<void> {
     const cfg = this.cfg();
-    // Anchor to dormant_since once set; updated_at is bumped by Penn actions (supplier
-    // selection, payment confirmation) even when the client is still silent. Using
-    // dormant_since means the forfeit clock is immune to host writes. (should-fix 3)
-    const anchor = order.dormant_since ?? order.updated_at;
+    // Anchor to dormant_since once set. Before first detection, anchor to the client's
+    // last msg_recv (immune to Penn writes like payment confirmation or supplier selection),
+    // falling back to order.created_at only if no client message exists yet.
+    const anchor = order.dormant_since
+      ?? this.d.store.getLastClientMessageTime(order.order_id)
+      ?? order.created_at;
     const elapsed = this.d.clock.nowMs() - Date.parse(anchor);
     const forfeitable = FORFEITABLE.has(order.state) && this.depositPaid(order);
 
