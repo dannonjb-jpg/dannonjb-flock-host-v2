@@ -95,8 +95,12 @@ export interface Store {
   hasHeldMoney(orderId: string): boolean;
   /** Count of succeeded inbound `digital` payments = current block index. */
   succeededDigitalBlocks(orderId: string): number;
-  /** Count of succeeded inbound `revision` payments = current block index. */
+  /** Count of succeeded inbound `revision` payments = extra revision blocks purchased. */
   succeededRevisionBlocks(orderId: string): number;
+  /** Count of revision_note events already applied to this order (for entitlement check). */
+  appliedRevisions(orderId: string): number;
+  /** Append a revision_note event, recording the inbound message that triggered it. */
+  recordRevisionEvent(orderId: string, inboundEventId: string): void;
 
   // ── events (append-only) ─────────────────────────────────────────────────
   appendEvent(e: NewEvent): EventRow;
