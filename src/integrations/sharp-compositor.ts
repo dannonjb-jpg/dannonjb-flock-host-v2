@@ -42,7 +42,7 @@ import {
   coarseUsable,
 } from "../store/asset-store";
 
-import type { Order } from "../domain/types";
+import type { Order, ElementSpec } from "../domain/types";
 import type { MockupUrls } from "../domain/integrations";
 
 // ─── Pipeline + sink contracts ────────────────────────────────────────────────
@@ -289,11 +289,90 @@ export interface JobSpec {
     colors?: string[]; // hex[] — structured palette (brain should emit)
     qr_content?: string; // e.g. https://wa.me/<number> (brain should emit)
   };
+  elements?: ElementSpec[]; // per-element layout overrides (position/size/color)
   // Phase 2 (read but ignored by Phase 1 composeBase):
   theme?: string;
   style?: string;
   color_palette?: string[];
   [k: string]: unknown;
+}
+
+// ─── Element ID helpers ────────────────────────────────────────────────────────
+// Stable, canonical IDs derived from region role / text position in the template.
+// Must be consistent between buildInitialElements and the composite loop.
+
+export function regionElementId(r: { role: string }): string {
+  return `${r.role}_main`; // logo_main | product_main | qr_main
+}
+
+export function textElementId(_t: { source: string }, idx: number): string {
+  if (idx === 0) return "text_headline";
+  return `text_${idx}`;
+}
+
+// ─── Element builder ───────────────────────────────────────────────────────────
+// Extracts the template's element layout as ElementSpec defaults with no overrides.
+// Stored in job_spec.elements at first mockup generation so revisions can override.
+
+export function buildInitialElements(tpl: Template): ElementSpec[] {
+  const elements: ElementSpec[] = [];
+  for (const r of tpl.regions) {
+    elements.push({
+      element_id: regionElementId(r),
+      type: "image",
+      locked: true,
+      position: { x: r.x, y: r.y },
+      size: { width: r.w, height: r.h },
+    });
+  }
+  tpl.text.forEach((t, idx) => {
+    elements.push({
+      element_id: textElementId(t, idx),
+      type: "text",
+      locked: true,
+      position: { x: t.x, y: t.y },
+      size: { width: t.fontFrac, height: t.fontFrac },
+      font: { family: "DejaVu Sans", weight: t.weight ?? 400, size_points: 0 },
+    });
+  });
+  return elements;
+}
+
+// Looks up the template pair for a product type and builds initial elements from
+// the A variant (canonical layout). Used by action-applier on first generation.
+export function buildInitialElementsForProductType(productType: string): ElementSpec[] {
+  const pair = REGISTRY[productType] ?? REGISTRY["generic"]!;
+  return buildInitialElements(pair.A);
+}
+
+// ─── mergeElementSpec ──────────────────────────────────────────────────────────
+// Merges a template-default ElementSpec with a job_spec override.
+// Override wins on all layout/style properties; content fields are ALWAYS from base.
+//
+// Content lock invariant: asset_id and content are locked — they are reference
+// fields only and the compositor never reads them for actual rendering. Assets
+// always come from AssetStore; text always comes from the Order row.
+
+export function mergeElementSpec(base: ElementSpec, override: ElementSpec): ElementSpec {
+  return {
+    element_id: base.element_id,
+    type: base.type,
+    locked: base.locked,
+    // Content — always from base (locked); override values silently ignored
+    content: base.content,
+    asset_id: base.asset_id,
+    // Layout — override wins if present
+    position: override.position ?? base.position,
+    size: override.size ?? base.size,
+    // Font — field-level merge (override's fields win; missing fields from base)
+    font:
+      override.font !== undefined
+        ? { ...(base.font ?? { family: "DejaVu Sans", weight: 400, size_points: 0 }), ...override.font }
+        : base.font,
+    // Style — override wins if present
+    color: override.color ?? base.color,
+    opacity: override.opacity ?? base.opacity,
+  };
 }
 
 function readJobSpec(order: Order): JobSpec {
@@ -352,20 +431,38 @@ export class SharpCompositor implements MockupPipeline {
     const spec = readJobSpec(order);
     const palette = resolvePalette(spec, tpl);
     const { w: W, h: H } = tpl.canvasPx;
+    const specElements = spec.elements ?? [];
 
     // 1. Base — the pluggable seam (Phase 2 swaps the body of composeBase).
     const base = await this.composeBase(order, tpl, palette, brief);
 
-    // 2. Fidelity overlays — deterministic placement of resolved assets.
+    // 2. Fidelity overlays — merge template defaults with job_spec element overrides.
     const layers: OverlayOptions[] = [];
     for (const r of tpl.regions) {
-      const placed = await this.placeRegion(order, spec, r, W, H);
+      const eid = regionElementId(r);
+      const templateEl: ElementSpec = {
+        element_id: eid, type: "image", locked: true,
+        position: { x: r.x, y: r.y }, size: { width: r.w, height: r.h },
+      };
+      const override = specElements.find(e => e.element_id === eid);
+      const merged = override ? mergeElementSpec(templateEl, override) : templateEl;
+      const placed = await this.placeRegion(order, spec, r, merged, W, H);
       if (placed) layers.push(placed);
     }
 
     // 3. Text — one full-canvas SVG per block, composited at origin.
-    for (const t of tpl.text) {
-      const svg = this.renderTextSvg(order, t, palette, W, H);
+    for (let idx = 0; idx < tpl.text.length; idx++) {
+      const t = tpl.text[idx]!;
+      const eid = textElementId(t, idx);
+      const templateEl: ElementSpec = {
+        element_id: eid, type: "text", locked: true,
+        position: { x: t.x, y: t.y },
+        size: { width: t.fontFrac, height: t.fontFrac },
+        font: { family: "DejaVu Sans", weight: t.weight ?? 400, size_points: 0 },
+      };
+      const override = specElements.find(e => e.element_id === eid);
+      const merged = override ? mergeElementSpec(templateEl, override) : templateEl;
+      const svg = this.renderTextSvg(order, t, merged, palette, W, H);
       if (svg) layers.push({ input: svg, top: 0, left: 0 });
     }
 
@@ -382,13 +479,19 @@ export class SharpCompositor implements MockupPipeline {
     order: Order,
     spec: JobSpec,
     r: Region,
+    merged: ElementSpec, // element with layout overrides applied
     W: number,
     H: number,
   ): Promise<OverlayOptions | null> {
-    const boxW = Math.round(r.w * W);
-    const boxH = Math.round(r.h * H);
-    const boxLeft = Math.round(r.x * W);
-    const boxTop = Math.round(r.y * H);
+    // Layout from merged element (override wins) — NEVER from merged.asset_id (content lock)
+    const rx = merged.position?.x ?? r.x;
+    const ry = merged.position?.y ?? r.y;
+    const rw = merged.size?.width ?? r.w;
+    const rh = merged.size?.height ?? r.h;
+    const boxW = Math.round(rw * W);
+    const boxH = Math.round(rh * H);
+    const boxLeft = Math.round(rx * W);
+    const boxTop = Math.round(ry * H);
 
     if (r.role === "qr") {
       const content = spec.specs?.qr_content;
@@ -441,10 +544,12 @@ export class SharpCompositor implements MockupPipeline {
   private renderTextSvg(
     order: Order,
     t: TextSpec,
+    merged: ElementSpec, // element with layout/style overrides applied
     palette: Palette,
     W: number,
     H: number,
   ): Buffer | null {
+    // Content ALWAYS from Order row, NEVER from merged.content (content lock).
     const text =
       t.source === "custom"
         ? t.text
@@ -453,11 +558,18 @@ export class SharpCompositor implements MockupPipeline {
           : order.business_name;
     if (!text) return null; // optional text simply absent — not an error
 
-    const size = Math.round(t.fontFrac * H);
-    const x = Math.round(t.x * W);
-    const y = Math.round(t.y * H);
-    const fill = t.colorKey === "accent" ? palette.accent : palette.fg;
-    const weight = t.weight ?? 400;
+    // Layout and style from merged element (override wins, template is fallback).
+    const fontFrac = merged.size?.height ?? t.fontFrac;
+    // If merged element specifies absolute size_points (> 0), use it; else derive from fontFrac.
+    const size =
+      (merged.font?.size_points && merged.font.size_points > 0)
+        ? merged.font.size_points
+        : Math.round(fontFrac * H);
+    const x = Math.round((merged.position?.x ?? t.x) * W);
+    const y = Math.round((merged.position?.y ?? t.y) * H);
+    // Direct hex from override; else resolve from palette as usual.
+    const fill = merged.color ?? (t.colorKey === "accent" ? palette.accent : palette.fg);
+    const weight = merged.font?.weight ?? t.weight ?? 400;
     const anchor = t.anchor ?? "start";
 
     // System font stack; ensure a sans family is installed on the box, else the
