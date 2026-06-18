@@ -32,18 +32,30 @@ function urgencyMultiplier(days?: number): number {
   return 1.0;
 }
 
-// ── unit-priced products: [minQty, pricePerUnit (USD)] tiers ─────────────────
-// "At qty N or more you pay this per unit." Pick the highest tier where minQty ≤ qty.
-export const UNIT_TIERS: Record<string, [number, number][]> = {
-  tshirt:      [[1,30],[5,22],[25,18],[100,15]],
-  hat:         [[1,35],[5,25],[25,20],[100,16]],
-  bag:         [[1,22],[5,18],[25,15],[100,13]],
-  mug:         [[1,20],[5,15],[25,12],[100,10]],
-  dtf_transfer:[[1, 8],[5, 6],[25, 5],[100, 4]],
-  tumbler:     [[1,40],[5,30],[25,24],[100,20]],
-  sky_dancer:  [[1,250],[5,200],[25,175]],
-  flag:        [[1,45]],  // guide doesn't tier flags; use single price
+// ── standard unit-discount ladder ────────────────────────────────────────────
+// Shared [minQty, multiplier] breakpoints used by all unit-priced products unless
+// overridden. Selection: pick the highest tier where minQty ≤ qty.
+export const UNIT_LADDER: [number, number][] = [
+  [1,   1.00],
+  [5,   0.90],
+  [25,  0.75],
+  [100, 0.65],
+  [500, 0.55],
+];
+
+// Base prices (qty-1 USD) for unit-priced products.
+export const UNIT_BASE_PRICES: Record<string, number> = {
+  tshirt:        30,
+  hat:           35,
+  bag:           22,
+  mug:           20,
+  dtf_transfer:   8,
+  tumbler:       40,
 };
+
+// Per-product override: a custom [minQty, multiplier] table replaces UNIT_LADDER
+// for that product. Empty for all current products; reserved for future use.
+export const UNIT_LADDER_OVERRIDES: Record<string, [number, number][]> = {};
 
 // ── sqft-priced products ──────────────────────────────────────────────────────
 // banner_uv removed — UV resistance is now a +$2/sqft post-print upcharge (UV_UPCHARGE_PER_SQFT),
@@ -76,7 +88,8 @@ export const FLAT_PRINT: Record<string, Record<number, number>> = {
   sticker:               { 1000:90 },  // 2" circle; other sizes escalate to Dan
 };
 
-// Dan-approval products — host escalates, brain never auto-quotes a price
+// Dan-approval products — host escalates, brain never auto-quotes a price.
+// flag and sky_dancer are parked here pending clean pricing numbers; history preserved.
 export const DAN_APPROVAL: Record<string, string> = {
   business_signage_indoor:         "Indoor Illuminated Sign",
   business_signage_exterior_flat:  "Exterior Flat Sign",
@@ -89,6 +102,8 @@ export const DAN_APPROVAL: Record<string, string> = {
   packaging:                       "Custom Packaging",
   specialty_fabrication:           "Specialty Fabrication",
   feather_flag:                    "Feather Flag (sizes pending — escalate for quote)",
+  flag:                            "Custom Flag (pricing pending — escalate for quote)",
+  sky_dancer:                      "Sky Dancer / Inflatable (pricing pending — escalate for quote)",
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +128,11 @@ function toCents(usd: number): number {
   return Math.round(usd * 100);
 }
 
+// Round to the nearest $0.05 (5 cents). Applied to all auto-computed prices.
+export function roundToNickel(cents: number): number {
+  return Math.round(cents / 5) * 5;
+}
+
 export const MIN_CENTS = 2000; // $20 physical floor
 
 // ── main entry ────────────────────────────────────────────────────────────────
@@ -121,7 +141,7 @@ export function computePrice(inputs: PricingInputs): PricingResult {
   const type = inputs.product_type;
   if (!type) return { ok: false, requiresDanApproval: false, reason: "product_type not yet collected" };
 
-  // Dan-approval check first
+  // Dan-approval check first (includes parked products: flag, sky_dancer)
   if (DAN_APPROVAL[type]) {
     return { ok: false, requiresDanApproval: true, productName: DAN_APPROVAL[type]! };
   }
@@ -135,12 +155,15 @@ export function computePrice(inputs: PricingInputs): PricingResult {
   const mult = urgencyMultiplier(inputs.turnaround_days);
 
   // ── unit-priced ───────────────────────────────────────────────────────────
-  if (UNIT_TIERS[type]) {
+  // Uses UNIT_LADDER (shared) unless the product has an entry in UNIT_LADDER_OVERRIDES.
+  const basePrice = UNIT_BASE_PRICES[type];
+  if (basePrice != null) {
     const qty = inputs.quantity ?? 1;
-    const perUnit = pickTier(UNIT_TIERS[type]!, qty);
-    if (perUnit == null) return { ok: false, requiresDanApproval: false, reason: "quantity out of range" };
-    const gross = perUnit * qty * mult;
-    const cents = Math.max(MIN_CENTS, toCents(gross));
+    const ladder = UNIT_LADDER_OVERRIDES[type] ?? UNIT_LADDER;
+    const discount = pickTier(ladder, qty);
+    if (discount == null) return { ok: false, requiresDanApproval: false, reason: "quantity out of range" };
+    const gross = basePrice * discount * qty * mult;
+    const cents = roundToNickel(Math.max(MIN_CENTS, toCents(gross)));
     return { ok: true, priceCents: cents, displayPrice: `$${(cents / 100).toFixed(2)}` };
   }
 
@@ -155,7 +178,7 @@ export function computePrice(inputs: PricingInputs): PricingResult {
     const extraLayers = Math.max(0, (inputs.num_colors ?? 1) - 1);
     const perSqft = CUT_VINYL_BASE_PER_SQFT + extraLayers * CUT_VINYL_LAYER_UPCHARGE;
     const gross = perSqft * sqft * mult;
-    const cents = Math.max(CUT_VINYL_MIN_CENTS, toCents(gross));
+    const cents = roundToNickel(Math.max(CUT_VINYL_MIN_CENTS, toCents(gross)));
     return { ok: true, priceCents: cents, displayPrice: `$${(cents / 100).toFixed(2)}` };
   }
 
@@ -171,7 +194,7 @@ export function computePrice(inputs: PricingInputs): PricingResult {
     const baseGross = perSqft * sqft * mult;
     // UV post-print upcharge: flat per sqft, not urgency-scaled (independent treatment step).
     const uvUpcharge = inputs.uv_resistant ? UV_UPCHARGE_PER_SQFT * sqft : 0;
-    const cents = Math.max(MIN_CENTS, toCents(baseGross + uvUpcharge));
+    const cents = roundToNickel(Math.max(MIN_CENTS, toCents(baseGross + uvUpcharge)));
     return { ok: true, priceCents: cents, displayPrice: `$${(cents / 100).toFixed(2)}` };
   }
 
@@ -181,7 +204,7 @@ export function computePrice(inputs: PricingInputs): PricingResult {
     const qty = inputs.quantity ?? 1000;
     const run = pickRunTier(FLAT_PRINT[variant]!, qty);
     if (!run) return { ok: false, requiresDanApproval: true, productName: `Custom business-card run (${qty})` };
-    const cents = Math.max(MIN_CENTS, toCents(run.total * mult));
+    const cents = roundToNickel(Math.max(MIN_CENTS, toCents(run.total * mult)));
     return { ok: true, priceCents: cents, displayPrice: `$${(cents / 100).toFixed(2)}` };
   }
 
@@ -189,7 +212,7 @@ export function computePrice(inputs: PricingInputs): PricingResult {
     const qty = inputs.quantity ?? 1000;
     const run = pickRunTier(FLAT_PRINT[type]!, qty);
     if (!run) return { ok: false, requiresDanApproval: true, productName: `Custom ${type} run (${qty})` };
-    const cents = Math.max(MIN_CENTS, toCents(run.total * mult));
+    const cents = roundToNickel(Math.max(MIN_CENTS, toCents(run.total * mult)));
     return { ok: true, priceCents: cents, displayPrice: `$${(cents / 100).toFixed(2)}` };
   }
 

@@ -7,16 +7,16 @@
 
 ## Apparel & Promotional
 
-| Product | 1 | 5 | 25 | 100 |
-|---|---|---|---|---|
-| T-Shirt (DTF) | $30 | $22 | $18 | $15 |
-| Hat (Embroidered) | $35 | $25 | $20 | $16 |
-| Tote Bag | $22 | $18 | $15 | $13 |
-| Ceramic Mug (11oz) | $20 | $15 | $12 | $10 |
-| DTF Transfer | $8 | $6 | $5 | $4 |
-| Tumbler | $40 | $30 | $24 | $20 |
-| Sky Dancer / Inflatable | $250 | $200 | $175 | $175 |
-| Custom Flag | $45 | $45 | $45 | $45 |
+Per-unit price at each quantity tier (standard discount ladder 100%/90%/75%/65%/55%):
+
+| Product | 1+ | 5+ | 25+ | 100+ | 500+ |
+|---|---|---|---|---|---|
+| T-Shirt (DTF) | $30 | $27 | $22.50 | $19.50 | $16.50 |
+| Hat (Embroidered) | $35 | $31.50 | $26.25 | $22.75 | $19.25 |
+| Tote Bag | $22 | $19.80 | $16.50 | $14.30 | $12.10 |
+| Ceramic Mug (11oz) | $20 | $18 | $15 | $13 | $11 |
+| DTF Transfer | $8 | $7.20 | $6 | $5.20 | $4.40 |
+| Tumbler | $40 | $36 | $30 | $26 | $22 |
 
 -----
 
@@ -81,6 +81,7 @@ Apply urgency on top of the base price. Always mention the multiplier when quoti
 - **Digital file only** (no print): $5 flat on any product
 - **Revisions**: 3 free · $5 per additional round (block of 3)
 - **Minimum quote**: $20 (physical; digital $5 flat is separate)
+- All prices rounded to the nearest $0.05
 
 -----
 
@@ -99,3 +100,5 @@ For the following, tell the client: *"Let me put together an exact quote for you
 - Custom Packaging
 - Specialty Fabrication
 - Feather Flag (sizes pending — escalate for quote)
+- Custom Flag (pricing pending — escalate for quote)
+- Sky Dancer / Inflatable (pricing pending — escalate for quote)

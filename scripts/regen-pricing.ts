@@ -7,7 +7,8 @@ import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import {
-  UNIT_TIERS, SQFT_TIERS, FLAT_PRINT, DAN_APPROVAL,
+  UNIT_LADDER, UNIT_BASE_PRICES, UNIT_LADDER_OVERRIDES,
+  SQFT_TIERS, FLAT_PRINT, DAN_APPROVAL,
   MIN_CENTS, UV_UPCHARGE_PER_SQFT,
   CUT_VINYL_BASE_PER_SQFT, CUT_VINYL_LAYER_UPCHARGE, CUT_VINYL_MIN_CENTS,
 } from "../src/pricing/pricing.js";
@@ -22,8 +23,6 @@ const PRODUCT_LABELS: Record<string, string> = {
   mug:          "Ceramic Mug (11oz)",
   dtf_transfer: "DTF Transfer",
   tumbler:      "Tumbler",
-  sky_dancer:   "Sky Dancer / Inflatable",
-  flag:         "Custom Flag",
 };
 
 const FLAT_LABELS: Record<string, string> = {
@@ -35,23 +34,26 @@ const FLAT_LABELS: Record<string, string> = {
   sticker:               "Stickers 2\" circle",
 };
 
-function usd(cents: number): string {
-  return `$${(cents / 100).toFixed(0)}`;
+function fmt(usd: number): string {
+  return usd % 1 === 0 ? `$${usd.toFixed(0)}` : `$${usd.toFixed(2)}`;
 }
 
 function unitTable(): string {
-  const lines: string[] = [];
-  lines.push("| Product | 1 | 5 | 25 | 100 |");
-  lines.push("|---|---|---|---|---|");
-  for (const [key, tiers] of Object.entries(UNIT_TIERS)) {
+  const breakpoints = UNIT_LADDER.map(([min]) => min);
+  const header = `| Product | ${breakpoints.map(q => `${q}+`).join(" | ")} |`;
+  const sep    = `|${Array(breakpoints.length + 1).fill("---").join("|")}|`;
+  const rows: string[] = [];
+  for (const [key, base] of Object.entries(UNIT_BASE_PRICES)) {
     const label = PRODUCT_LABELS[key] ?? key;
-    const at = (qty: number) => {
-      const p = tiers.filter(([min]) => min <= qty).at(-1)?.[1];
-      return p != null ? `$${p}` : "—";
-    };
-    lines.push(`| ${label} | ${at(1)} | ${at(5)} | ${at(25)} | ${at(100)} |`);
+    const ladder = UNIT_LADDER_OVERRIDES[key] ?? UNIT_LADDER;
+    const cols = breakpoints.map(qty => {
+      // Per-unit price at this breakpoint
+      const m = ladder.filter(([min]) => min <= qty).at(-1)?.[1];
+      return m != null ? fmt(base * m) : "—";
+    });
+    rows.push(`| ${label} | ${cols.join(" | ")} |`);
   }
-  return lines.join("\n");
+  return [header, sep, ...rows].join("\n");
 }
 
 function flatTable(): string {
@@ -93,6 +95,8 @@ lines.push("-----");
 lines.push("");
 lines.push("## Apparel & Promotional");
 lines.push("");
+lines.push("Per-unit price at each quantity tier (standard discount ladder 100%/90%/75%/65%/55%):");
+lines.push("");
 lines.push(unitTable());
 lines.push("");
 lines.push("-----");
@@ -115,7 +119,7 @@ lines.push("");
 lines.push(sqftTable());
 lines.push("");
 lines.push(`**UV resistance upcharge:** +$${UV_UPCHARGE_PER_SQFT}/sqft post-print on banners or mesh.`);
-lines.push("Not urgency-scaled. Set \`uv_resistant=true\` in specs.");
+lines.push("Not urgency-scaled. Set `uv_resistant=true` in specs.");
 lines.push("*Grommets and hem included on banners.*");
 lines.push("");
 lines.push("-----");
@@ -145,7 +149,8 @@ lines.push("- **50% deposit** to begin — required before any work starts");
 lines.push("- **50% balance** before delivery");
 lines.push("- **Digital file only** (no print): $5 flat on any product");
 lines.push("- **Revisions**: 3 free · $5 per additional round (block of 3)");
-lines.push(`- **Minimum quote**: ${usd(MIN_CENTS)} (physical; digital $5 flat is separate)`);
+lines.push(`- **Minimum quote**: $${MIN_CENTS / 100} (physical; digital $5 flat is separate)`);
+lines.push("- All prices rounded to the nearest $0.05");
 lines.push("");
 lines.push("-----");
 lines.push("");

@@ -10,6 +10,10 @@ import {
   UV_UPCHARGE_PER_SQFT,
   CUT_VINYL_BASE_PER_SQFT,
   CUT_VINYL_LAYER_UPCHARGE,
+  UNIT_LADDER,
+  UNIT_BASE_PRICES,
+  UNIT_LADDER_OVERRIDES,
+  roundToNickel,
 } from "../src/pricing/pricing.js";
 import { ActionApplier, ApplyDeps } from "../src/brain/action-applier.js";
 import { Store, NewEvent, NewPayment, Quote, IdempotencyCollision } from "../src/store/store.js";
@@ -202,22 +206,25 @@ test("tumbler: qty 1 = $40", () => {
   assert.equal(r.priceCents, 4000);
 });
 
-test("tumbler: qty 5 = $150 ($30 each)", () => {
+test("tumbler: qty 5 = $180 ($36 each, ladder 0.90)", () => {
+  // $40 × 0.90 × 5 = $180
   const r = computePrice({ product_type: "tumbler", quantity: 5 });
   assert.ok(r.ok);
-  assert.equal(r.priceCents, 15000);
+  assert.equal(r.priceCents, 18000);
 });
 
-test("tumbler: qty 25 = $600 ($24 each)", () => {
+test("tumbler: qty 25 = $750 ($30 each, ladder 0.75)", () => {
+  // $40 × 0.75 × 25 = $750
   const r = computePrice({ product_type: "tumbler", quantity: 25 });
   assert.ok(r.ok);
-  assert.equal(r.priceCents, 60000);
+  assert.equal(r.priceCents, 75000);
 });
 
-test("tumbler: qty 100 = $2000 ($20 each)", () => {
+test("tumbler: qty 100 = $2600 ($26 each, ladder 0.65)", () => {
+  // $40 × 0.65 × 100 = $2600
   const r = computePrice({ product_type: "tumbler", quantity: 100 });
   assert.ok(r.ok);
-  assert.equal(r.priceCents, 200000);
+  assert.equal(r.priceCents, 260000);
 });
 
 // ── stickers ──────────────────────────────────────────────────────────────────
@@ -469,6 +476,158 @@ test("sub-$1000 quote does NOT trigger Penn notification", async () => {
     !notifier.calls.some((c) => c.includes("high-value-quote")),
     "Penn must NOT be notified for sub-$1000 quotes",
   );
+});
+
+// ── Increment 2: shared ladder, parked products, nickel rounding ─────────────
+
+test("UNIT_LADDER has 5 breakpoints: 1/5/25/100/500", () => {
+  const mins = UNIT_LADDER.map(([m]) => m);
+  assert.deepEqual(mins, [1, 5, 25, 100, 500]);
+  const mults = UNIT_LADDER.map(([, m]) => m);
+  assert.deepEqual(mults, [1.00, 0.90, 0.75, 0.65, 0.55]);
+});
+
+test("ladder: qty < 5 uses tier-1 (1.00x)", () => {
+  // t-shirt qty=3: $30 × 1.00 × 3 = $90
+  const r = computePrice({ product_type: "tshirt", quantity: 3 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 9000);
+});
+
+test("ladder: qty=5 triggers tier-2 (0.90x)", () => {
+  // t-shirt qty=5: $30 × 0.90 × 5 = $135
+  const r = computePrice({ product_type: "tshirt", quantity: 5 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 13500);
+});
+
+test("ladder: qty between 5 and 25 stays at tier-2 (0.90x)", () => {
+  // t-shirt qty=10: $30 × 0.90 × 10 = $270
+  const r = computePrice({ product_type: "tshirt", quantity: 10 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 27000);
+});
+
+test("ladder: qty=25 triggers tier-3 (0.75x)", () => {
+  // t-shirt qty=25: $30 × 0.75 × 25 = $562.50
+  const r = computePrice({ product_type: "tshirt", quantity: 25 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 56250);
+});
+
+test("ladder: qty=100 triggers tier-4 (0.65x)", () => {
+  // t-shirt qty=100: $30 × 0.65 × 100 = $1950
+  const r = computePrice({ product_type: "tshirt", quantity: 100 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 195000);
+});
+
+test("ladder: qty=500 triggers tier-5 (0.55x)", () => {
+  // t-shirt qty=500: $30 × 0.55 × 500 = $8250
+  const r = computePrice({ product_type: "tshirt", quantity: 500 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 825000);
+});
+
+test("ladder: qty=501 stays at tier-5 (0.55x)", () => {
+  // t-shirt qty=501: $30 × 0.55 × 501 = $8266.50 → 826650
+  const r = computePrice({ product_type: "tshirt", quantity: 501 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 826650);
+});
+
+test("tumbler qty=500 uses tier-5 (0.55x): $22/unit", () => {
+  // $40 × 0.55 × 500 = $11000
+  const r = computePrice({ product_type: "tumbler", quantity: 500 });
+  assert.ok(r.ok);
+  assert.equal(r.priceCents, 1100000);
+});
+
+// Verify all six ladder products produce expected qty-1 prices
+test("all UNIT_BASE_PRICES keys are quotable", () => {
+  for (const [key, base] of Object.entries(UNIT_BASE_PRICES)) {
+    const r = computePrice({ product_type: key, quantity: 1 });
+    assert.ok(r.ok, `${key} should be auto-priced`);
+    assert.ok(r.ok && r.priceCents >= 0, `${key} priceCents should be >= 0`);
+    // qty-1 price = base × 1.00 × 1; floored at MIN_CENTS
+    const expected = Math.max(MIN_CENTS, Math.round(base * 100));
+    assert.equal(r.ok && r.priceCents, expected, `${key} qty=1 should be $${base} (or floor)`);
+  }
+});
+
+// ── parked products: flag and sky_dancer ─────────────────────────────────────
+
+test("flag is parked → requires Dan approval", () => {
+  const r = computePrice({ product_type: "flag" });
+  assert.ok(!r.ok);
+  assert.ok(!r.ok && r.requiresDanApproval, "flag must escalate, not auto-quote");
+  assert.ok(!r.ok && r.requiresDanApproval && r.productName.includes("Flag"));
+});
+
+test("sky_dancer is parked → requires Dan approval", () => {
+  const r = computePrice({ product_type: "sky_dancer" });
+  assert.ok(!r.ok);
+  assert.ok(!r.ok && r.requiresDanApproval, "sky_dancer must escalate, not auto-quote");
+  assert.ok(!r.ok && r.requiresDanApproval && r.productName.toLowerCase().includes("sky dancer"));
+});
+
+// ── $0.05 rounding (roundToNickel) ───────────────────────────────────────────
+
+test("roundToNickel: rounds up at midpoint", () => {
+  assert.equal(roundToNickel(1003), 1005); // $10.03 → $10.05
+  assert.equal(roundToNickel(1007), 1005); // $10.07 → $10.05
+  assert.equal(roundToNickel(1008), 1010); // $10.08 → $10.10
+});
+
+test("roundToNickel: exact multiples unchanged", () => {
+  assert.equal(roundToNickel(2000), 2000);
+  assert.equal(roundToNickel(4500), 4500);
+  assert.equal(roundToNickel(13500), 13500);
+});
+
+test("roundToNickel: rounds down when closer to lower nickel", () => {
+  assert.equal(roundToNickel(1001), 1000); // $10.01 → $10.00
+  assert.equal(roundToNickel(1002), 1000); // $10.02 → $10.00
+});
+
+test("computePrice output is always a multiple of 5 cents", () => {
+  // Spot-check several products and quantities
+  const cases: Parameters<typeof computePrice>[0][] = [
+    { product_type: "tshirt", quantity: 7 },
+    { product_type: "hat", quantity: 3, turnaround_days: 2 },
+    { product_type: "mug", quantity: 50, turnaround_days: 5 },
+    { product_type: "tumbler", quantity: 12 },
+    { product_type: "dtf_transfer", quantity: 200, turnaround_days: 2 },
+    { product_type: "banner_standard", sqft: 17 },
+    { product_type: "cut_vinyl", sqft: 7, num_colors: 2, turnaround_days: 2 },
+  ];
+  for (const inputs of cases) {
+    const r = computePrice(inputs);
+    assert.ok(r.ok, `${JSON.stringify(inputs)} should price ok`);
+    assert.equal(
+      r.ok && r.priceCents % 5, 0,
+      `${JSON.stringify(inputs)} → ${r.ok ? r.priceCents : "err"} must be divisible by 5`,
+    );
+  }
+});
+
+// ── override hook ─────────────────────────────────────────────────────────────
+
+test("UNIT_LADDER_OVERRIDES: custom curve overrides standard ladder", () => {
+  // Install a flat 50% override for tshirt, verify it's used, then remove it.
+  UNIT_LADDER_OVERRIDES["tshirt"] = [[1, 0.50]];
+  try {
+    // $30 × 0.50 × 10 = $150
+    const r = computePrice({ product_type: "tshirt", quantity: 10 });
+    assert.ok(r.ok);
+    assert.equal(r.priceCents, 15000, "override should override the standard ladder");
+  } finally {
+    delete UNIT_LADDER_OVERRIDES["tshirt"];
+  }
+  // Verify standard ladder restored
+  const r2 = computePrice({ product_type: "tshirt", quantity: 10 });
+  assert.ok(r2.ok);
+  assert.equal(r2.priceCents, 27000, "standard ladder should be restored after override removed");
 });
 
 // ── run ───────────────────────────────────────────────────────────────────────
