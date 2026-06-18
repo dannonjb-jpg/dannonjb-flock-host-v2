@@ -2,6 +2,9 @@
 // Domain types mirror order-schema.sql 1:1. The SQL CHECK constraints are the
 // authority; these unions must stay identical to them.
 
+export type FulfillmentMethod = "pickup" | "local_delivery" | "ship";
+export type ShippingTier = "standard" | "priority" | "overnight";
+
 export type Track = "undecided" | "physical" | "digital";
 
 export type OrderState =
@@ -65,6 +68,12 @@ export interface Order {
   last_tier: Tier | null;
   force_tier: Tier | null;
   notes: string | null;
+  // Fulfillment fields (§5.12) — NULL until fulfillment step is reached
+  fulfillment_method: FulfillmentMethod | null;
+  delivery_address: string | null;
+  shipping_tier: ShippingTier | null;
+  shipping_cents: number | null;
+  ready_to_ship_date: string | null; // ISO8601 agreed project date; ETA clock starts here
 }
 
 export interface Payment {

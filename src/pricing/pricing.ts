@@ -47,7 +47,7 @@ export const UNIT_LADDER: [number, number][] = [
 export const UNIT_BASE_PRICES: Record<string, number> = {
   tshirt:        30,
   hat:           35,
-  bag:           22,
+  tote:          22,
   mug:           20,
   dtf_transfer:   8,
   tumbler:       40,
@@ -56,6 +56,15 @@ export const UNIT_BASE_PRICES: Record<string, number> = {
 // Per-product override: a custom [minQty, multiplier] table replaces UNIT_LADDER
 // for that product. Empty for all current products; reserved for future use.
 export const UNIT_LADDER_OVERRIDES: Record<string, [number, number][]> = {};
+
+// Legacy product_type aliases — normalize before lookup so in-flight "bag" orders price.
+export const PRODUCT_TYPE_ALIASES: Record<string, string> = {
+  bag: "tote",
+};
+
+export function normalizeProductType(type: string): string {
+  return PRODUCT_TYPE_ALIASES[type] ?? type;
+}
 
 // ── sqft-priced products ──────────────────────────────────────────────────────
 // banner_uv removed — UV resistance is now a +$2/sqft post-print upcharge (UV_UPCHARGE_PER_SQFT),
@@ -138,7 +147,7 @@ export const MIN_CENTS = 2000; // $20 physical floor
 // ── main entry ────────────────────────────────────────────────────────────────
 
 export function computePrice(inputs: PricingInputs): PricingResult {
-  const type = inputs.product_type;
+  const type = inputs.product_type ? normalizeProductType(inputs.product_type) : inputs.product_type;
   if (!type) return { ok: false, requiresDanApproval: false, reason: "product_type not yet collected" };
 
   // Dan-approval check first (includes parked products: flag, sky_dancer)

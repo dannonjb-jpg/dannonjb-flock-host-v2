@@ -56,7 +56,16 @@ CREATE TABLE IF NOT EXISTS orders (
 
   notes               TEXT,
 
+  -- Fulfillment fields (§5.12) — NULL until fulfillment step
+  fulfillment_method  TEXT,                    -- 'pickup'|'local_delivery'|'ship'
+  delivery_address    TEXT,                    -- free-text; collected at fulfillment step
+  shipping_tier       TEXT,                    -- 'standard'|'priority'|'overnight'
+  shipping_cents      INTEGER,                 -- computed by computeShipping(); added to order total
+  ready_to_ship_date  TEXT,                    -- ISO8601 agreed project date; ETA clock starts here
+
   CHECK (track IN ('undecided','physical','digital')),
+  CHECK (fulfillment_method IS NULL OR fulfillment_method IN ('pickup','local_delivery','ship')),
+  CHECK (shipping_tier IS NULL OR shipping_tier IN ('standard','priority','overnight')),
   CHECK (state IN (
     'intake', 'mockup', 'awaiting_decision',
     'deposit_pending', 'digital_pending',
