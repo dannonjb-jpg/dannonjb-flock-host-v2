@@ -7,3 +7,4 @@ flock.db.backup
 wa-auth/
 wa-auth.backup/
 .last-deployed-sha
+.vet-reports/
