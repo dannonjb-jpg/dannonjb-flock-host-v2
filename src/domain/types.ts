@@ -107,6 +107,16 @@ export interface Order {
   shop_rejected_reason: string | null;
 }
 
+export interface Client {
+  client_id: string;
+  whatsapp_jid: string;
+  name?: string;
+  business?: string;
+  delivery_address?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Payment {
   payment_id: string;
   order_id: string;
@@ -172,6 +182,13 @@ export interface JobSpec {
     flagged: boolean;
     reason?: string;
     checked_at: string;           // ISO8601
+  };
+  recalled_job?: {
+    order_id: string;
+    job_spec: JobSpec | null;
+    selected_mockup: "A" | "B" | null;
+    price_cents: number | null;
+    mockup_urls: { A?: string; B?: string } | null;
   };
   [k: string]: unknown;
 }

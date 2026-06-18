@@ -19,6 +19,7 @@ import {
   EventRow,
   EventActor,
   EventType,
+  Client,
 } from "../domain/types.js";
 
 export interface NewEvent {
@@ -71,6 +72,13 @@ export interface Store {
    * the state machine; throws on an illegal transition (caller should have checked).
    */
   transition(orderId: string, to: OrderState, payload?: unknown): Order;
+
+  // ── client profiles ──────────────────────────────────────────────────────────
+  /** Upsert a client record for this JID. Only provided (non-undefined) fields are written on update. */
+  addOrUpdateClient(jid: string, name?: string | null, business?: string | null, delivery_address?: string | null): Client;
+  getClientByJid(jid: string): Client | null;
+  /** All orders (any state) for this JID, newest first. */
+  getClientOrders(jid: string): Order[];
 
   // ── payments (insert-before-charge, §7) ──────────────────────────────────
   /** Commit a `pending` row BEFORE charging. Throws IdempotencyCollision on retry. */
