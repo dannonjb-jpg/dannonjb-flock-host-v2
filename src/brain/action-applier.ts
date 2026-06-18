@@ -166,6 +166,14 @@ export class ActionApplier {
       const pricing = computePrice(spec.specs as PricingInputs);
       if (pricing.ok) {
         spec.price_cents = pricing.priceCents;
+        // Observer-only: notify owner of high-value quotes. Non-blocking; does not gate the order.
+        if (pricing.priceCents >= 100000) {
+          this.d.notifier
+            .postToPenn(
+              `[high-value-quote] order ${order.order_id}: computed $${(pricing.priceCents / 100).toFixed(2)} — FYI only, no action required.`,
+            )
+            .catch(() => {/* tolerate; non-blocking */});
+        }
       } else if (!pricing.ok && pricing.requiresDanApproval && !order.escalation) {
         patch.escalation = "manual";
         // Notify Penn async — fire and forget; non-blocking for the turn.
@@ -366,6 +374,12 @@ export class ActionApplier {
           actor: "flock",
           type: "payment",
           payload: { kind, status: "failed", retryable: true },
+        });
+        this.d.store.appendEvent({
+          order_id: order.order_id,
+          actor: "flock",
+          type: "router",
+          payload: { reason: "charge_failed", kind },
         });
         return null;
       }

@@ -10,7 +10,9 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:core": "tsc -p tsconfig.typecheck.json",
-    "test": "tsx test/core.test.ts"
+    "test": "tsx test/core.test.ts",
+    "test:pricing": "tsx test/pricing.test.ts",
+    "regen-pricing": "tsx scripts/regen-pricing.ts"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc13",
