@@ -61,6 +61,7 @@ export type PaymentKind =
   | "deposit"
   | "balance"
   | "digital"
+  | "revision"
   | "supplier_deposit"
   | "refund";
 export type PaymentDirection = "in" | "out";
@@ -140,6 +141,7 @@ export type EventType =
   | "quote_recv"
   | "payment"
   | "escalation"
+  | "revision"
   | "router"
   | "brain_attempt"
   | "brain_outcome";

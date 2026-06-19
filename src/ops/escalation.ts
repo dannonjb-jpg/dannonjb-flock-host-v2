@@ -92,7 +92,7 @@ export async function escalateForMockupFailure(
   store: Store,
   notifier: Notifier,
   orderId: string,
-  failureType: "bridge_failed" | "send_failed",
+  failureType: "bridge_failed" | "send_failed" | "generate_failed",
   message: string,
 ): Promise<void> {
   const order = store.getOrder(orderId);
