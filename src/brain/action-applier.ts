@@ -159,7 +159,7 @@ export class ActionApplier {
   private inboundEventId: string = '';
   constructor(private d: ApplyDeps) {}
 
-  async applyAll(orderId: string, actions: Action[], inboundEventId: string): Promise<ApplyOutcome> {
+  async applyAll(orderId: string, actions: Action[], inboundEventId = ""): Promise<ApplyOutcome> {
     this.inboundEventId = inboundEventId;
     const applied: Action[] = [];
     const rejected: Rejection[] = [];

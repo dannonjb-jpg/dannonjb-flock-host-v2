@@ -19,7 +19,7 @@ export type Action =
   | { type: "set_track"; track: Track }
   | { type: "request_mockup"; variant: MockupVariant; brief?: string }
   | { type: "select_mockup"; which: MockupWhich }
-  | { type: "mockup_rejected" }
+  | { type: "mockup_rejected"; notes?: string }
   | { type: "request_payment"; kind: ClientPaymentKind }
   | { type: "revision_note"; note: string }
   | { type: "approve_for_print" }
